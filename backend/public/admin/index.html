@@ -75,6 +75,44 @@
                     <li>Templates are sanitized to keep filesystem-safe names.</li>
                 </ul>
             </section>
+
+            <section class="card">
+                <div class="card-header">
+                    <div>
+                        <h2>Database Explorer</h2>
+                        <p>Inspect and edit server data stored in SQLite.</p>
+                    </div>
+                    <span class="pill">Advanced</span>
+                </div>
+
+                <div class="field">
+                    <label for="db-table">Table</label>
+                    <select id="db-table"></select>
+                </div>
+
+                <div class="actions">
+                    <button id="load-table-btn" class="secondary">Load table</button>
+                </div>
+
+                <div class="table-wrap">
+                    <table id="db-table-view">
+                        <thead></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <div class="field">
+                    <label for="row-editor">Row editor</label>
+                    <textarea id="row-editor" rows="6" placeholder="Select a row to edit"></textarea>
+                    <p class="help" id="row-editor-help">Edits are applied to the selected primary key.</p>
+                </div>
+
+                <div class="actions">
+                    <button id="save-row-btn" class="primary">Save row</button>
+                </div>
+
+                <p id="db-status" class="status" role="status" aria-live="polite"></p>
+            </section>
         </main>
 
         <script src="./admin.js"></script>
