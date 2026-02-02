@@ -1855,6 +1855,70 @@ export function initializeSettings(scrobbler, player, api, ui) {
 
     // Font Settings
     initializeFontSettings();
+    
+    // Server Downloads Settings
+    const serverDownloadsToggle = document.getElementById('server-downloads-toggle');
+    const serverDownloadsConfig = document.getElementById('server-downloads-config');
+    const backendUrlInput = document.getElementById('backend-url-input');
+    const testBackendBtn = document.getElementById('test-backend-connection-btn');
+    const backendStatusDiv = document.getElementById('backend-connection-status');
+
+    if (serverDownloadsToggle && serverDownloadsConfig && backendUrlInput && testBackendBtn) {
+        // Initialize UI state
+        const settings = serverDownloadSettings.getSettings();
+        serverDownloadsToggle.checked = settings.enabled ?? false;
+        backendUrlInput.value = serverDownloadSettings.getBackendUrl();
+        serverDownloadsConfig.style.display = serverDownloadsToggle.checked ? 'block' : 'none';
+
+        // Toggle visibility
+        serverDownloadsToggle.addEventListener('change', async (e) => {
+            const enabled = e.target.checked;
+            serverDownloadSettings.setEnabled(enabled);
+            serverDownloadsConfig.style.display = enabled ? 'block' : 'none';
+
+            if (enabled) {
+                // Auto-test connection when enabling
+                await testConnection();
+            } else {
+                backendStatusDiv.innerHTML = '';
+            }
+
+            // Reload to update backend detection
+            setTimeout(() => window.location.reload(), 500);
+        });
+
+        // Save backend URL
+        backendUrlInput.addEventListener('change', () => {
+            serverDownloadSettings.setBackendUrl(backendUrlInput.value);
+            backendUrlInput.value = serverDownloadSettings.getBackendUrl();
+        });
+
+        // Test connection
+        testBackendBtn.addEventListener('click', testConnection);
+
+        async function testConnection() {
+            testBackendBtn.disabled = true;
+            testBackendBtn.textContent = 'Testing...';
+            backendStatusDiv.innerHTML = '<span style="color: var(--muted-foreground);">⏳ Connecting...</span>';
+
+            const url = backendUrlInput.value || 'http://localhost:3001';
+            const result = await serverDownloadSettings.testConnection(url);
+
+            if (result.success) {
+                backendStatusDiv.innerHTML = `<span style="color: #4caf50;">✅ Connected! Server time: ${new Date(result.data.timestamp).toLocaleTimeString()}</span>`;
+            } else {
+                backendStatusDiv.innerHTML = `<span style="color: #f44336;">❌ Failed: ${result.error}</span>`;
+            }
+
+            testBackendBtn.disabled = false;
+            testBackendBtn.textContent = 'Test';
+        }
+
+        // Auto-test on page load if enabled
+        if (serverDownloadsToggle.checked) {
+            testConnection();
+        }
+    }
 
     // Settings Search functionality
     setupSettingsSearch();
@@ -2107,3 +2171,4 @@ function filterSettings(query) {
         group.style.display = hasMatch ? '' : 'none';
     });
 }
+

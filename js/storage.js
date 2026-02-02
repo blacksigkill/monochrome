@@ -1429,6 +1429,70 @@ export const sidebarSectionSettings = {
     },
 };
 
+export const serverDownloadSettings = {
+    STORAGE_KEY: 'monochrome-server-downloads',
+    DEFAULT_BACKEND_URL: 'http://localhost:3001',
+
+    isEnabled() {
+        const settings = this.getSettings();
+        return settings.enabled ?? false;
+    },
+
+    getBackendUrl() {
+        const settings = this.getSettings();
+        return this.normalizeBackendUrl(settings.backendUrl) || this.DEFAULT_BACKEND_URL;
+    },
+
+    normalizeBackendUrl(url) {
+        if (!url || typeof url !== 'string') return '';
+        return url.trim().replace(/\/+$/, '');
+    },
+
+    getSettings() {
+        const stored = localStorage.getItem(this.STORAGE_KEY);
+        if (stored) {
+            try {
+                return JSON.parse(stored);
+            } catch {
+                return {};
+            }
+        }
+        return {};
+    },
+
+    saveSettings(settings) {
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(settings));
+    },
+
+    setEnabled(enabled) {
+        const settings = this.getSettings();
+        settings.enabled = enabled;
+        this.saveSettings(settings);
+    },
+
+    setBackendUrl(url) {
+        const settings = this.getSettings();
+        settings.backendUrl = this.normalizeBackendUrl(url);
+        this.saveSettings(settings);
+    },
+
+    async testConnection(url) {
+        try {
+            const targetUrl = this.normalizeBackendUrl(url) || this.DEFAULT_BACKEND_URL;
+            const response = await fetch(`${targetUrl}/health`, {
+                signal: AbortSignal.timeout(3000),
+            });
+            if (response.ok) {
+                const data = await response.json();
+                return { success: true, data };
+            }
+            return { success: false, error: `HTTP ${response.status}` };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    },
+};
+
 // System theme listener
 if (typeof window !== 'undefined' && window.matchMedia) {
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
