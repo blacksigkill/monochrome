@@ -1,7 +1,4 @@
-import fs from 'fs/promises';
-import path from 'path';
-import { config } from '../config.js';
-import { logger } from '../logger.js';
+import { db } from '../db/index.js';
 import { DEFAULT_FILENAME_TEMPLATE } from '../utils/helpers.js';
 
 const DEFAULT_PREFERENCES = {
@@ -10,28 +7,39 @@ const DEFAULT_PREFERENCES = {
 };
 
 export class PreferencesService {
-    constructor({ filePath } = {}) {
-        const resolvedStoragePath = path.resolve(config.storagePath);
-        this.filePath = filePath || path.join(resolvedStoragePath, '..', 'preferences.json');
-    }
-
     async getPreferences() {
-        try {
-            const content = await fs.readFile(this.filePath, 'utf-8');
-            const stored = JSON.parse(content);
-            return { ...DEFAULT_PREFERENCES, ...stored };
-        } catch (error) {
-            if (error.code !== 'ENOENT') {
-                logger.warn(`Failed to read preferences: ${error.message}`);
-            }
-            return { ...DEFAULT_PREFERENCES };
+        const row = db.prepare('SELECT filename_template, download_quality FROM admin_settings WHERE id = 1').get();
+
+        if (row) {
+            return {
+                ...DEFAULT_PREFERENCES,
+                filenameTemplate: row.filename_template,
+                downloadQuality: row.download_quality,
+            };
         }
+
+        return { ...DEFAULT_PREFERENCES };
     }
 
     async savePreferences(preferences) {
         const next = { ...DEFAULT_PREFERENCES, ...preferences };
-        await fs.mkdir(path.dirname(this.filePath), { recursive: true });
-        await fs.writeFile(this.filePath, JSON.stringify(next, null, 2));
+        const now = new Date().toISOString();
+
+        db.prepare(
+            `
+                INSERT INTO admin_settings (id, filename_template, download_quality, updated_at)
+                VALUES (1, @filenameTemplate, @downloadQuality, @updatedAt)
+                ON CONFLICT(id) DO UPDATE SET
+                    filename_template = excluded.filename_template,
+                    download_quality = excluded.download_quality,
+                    updated_at = excluded.updated_at
+            `
+        ).run({
+            filenameTemplate: next.filenameTemplate,
+            downloadQuality: next.downloadQuality,
+            updatedAt: now,
+        });
+
         return next;
     }
 
