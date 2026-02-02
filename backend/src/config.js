@@ -20,4 +20,6 @@ export const config = {
     storagePath: process.env.STORAGE_PATH || './storage/tracks',
     allowedOrigins: parseOrigins(process.env.ALLOWED_ORIGINS),
     logLevel: process.env.LOG_LEVEL || 'info',
+    adminUsername: process.env.ADMIN_USERNAME || 'admin',
+    adminPassword: process.env.ADMIN_PASSWORD || '',
 };
