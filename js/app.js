@@ -10,6 +10,7 @@ import {
     pwaUpdateSettings,
     modalSettings,
     keyboardShortcuts,
+    serverDownloadSettings,
 } from './storage.js';
 import { UIRenderer } from './ui.js';
 import { Player } from './player.js';
@@ -377,6 +378,27 @@ document.addEventListener('DOMContentLoaded', async () => {
             localStorage.setItem('playback-quality', 'LOSSLESS');
         }
     }
+
+    // Detect backend for server-side downloads
+    async function detectBackend() {
+        if (!serverDownloadSettings.isEnabled()) {
+            window.BACKEND_URL = null;
+            console.debug('⚠️ Server downloads disabled in settings');
+            return;
+        }
+
+        const backendUrl = serverDownloadSettings.getBackendUrl();
+        const result = await serverDownloadSettings.testConnection(backendUrl);
+        if (result.success) {
+            window.BACKEND_URL = backendUrl;
+            console.log('✅ Backend detected:', backendUrl);
+        } else {
+            window.BACKEND_URL = null;
+            console.debug('⚠️ Backend unavailable, server downloads disabled');
+        }
+    }
+
+    await detectBackend();
 
     const currentQuality = localStorage.getItem('playback-quality') || 'HI_RES_LOSSLESS';
     const player = new Player(audioPlayer, api, currentQuality);
@@ -2898,6 +2920,7 @@ function showKeyboardShortcuts() {
     modal.classList.add('active');
 }
 
+<<<<<<< HEAD
 function showCustomizeShortcutsModal() {
     const modal = document.getElementById('customize-shortcuts-modal');
     const shortcutsList = document.getElementById('shortcuts-list');
@@ -3054,3 +3077,5 @@ function showCustomizeShortcutsModal() {
     renderShortcuts();
     modal.classList.add('active');
 }
+=======
+>>>>>>> ac5cd6a (Initialize a simple download server for monochrome)
