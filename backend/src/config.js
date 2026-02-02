@@ -18,6 +18,7 @@ const parseOrigins = (value) =>
 export const config = {
     port: Number.parseInt(process.env.PORT, 10) || 3001,
     storagePath: process.env.STORAGE_PATH || './storage/tracks',
+    dbPath: process.env.DB_PATH || './storage/monochrome.db',
     allowedOrigins: parseOrigins(process.env.ALLOWED_ORIGINS),
     logLevel: process.env.LOG_LEVEL || 'info',
     adminUsername: process.env.ADMIN_USERNAME || 'admin',
