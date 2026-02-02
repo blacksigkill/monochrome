@@ -331,11 +331,6 @@ export class Player {
 
         this.currentTrack = track;
 
-        // Trigger server-side download (non-blocking)
-        if (window.BACKEND_URL) {
-            void this.triggerServerDownload(track.id, this.quality);
-        }
-
         const trackTitle = getTrackTitle(track);
         const trackArtistsHTML = getTrackArtistsHTML(track);
         const yearDisplay = getTrackYearDisplay(track);
@@ -483,48 +478,27 @@ export class Player {
                 }
                 await this.audio.play();
             } else {
-                // Get track data for ReplayGain (should be cached by API)
-                const trackData = await this.api.getTrack(track.id, this.quality);
+                const cachedPreload = this.preloadCache.get(track.id);
+                const cachedIsBackend =
+                    window.BACKEND_URL && cachedPreload && cachedPreload.startsWith(window.BACKEND_URL);
 
-                if (trackData && trackData.info) {
-                    this.currentRgValues = {
-                        trackReplayGain: trackData.info.trackReplayGain,
-                        trackPeakAmplitude: trackData.info.trackPeakAmplitude,
-                        albumReplayGain: trackData.info.albumReplayGain,
-                        albumPeakAmplitude: trackData.info.albumPeakAmplitude,
-                    };
-                } else {
-                    this.currentRgValues = null;
-                }
-                this.applyReplayGain();
-
-                if (this.preloadCache.has(track.id)) {
-                    streamUrl = this.preloadCache.get(track.id);
-                } else if (trackData.originalTrackUrl) {
-                    streamUrl = trackData.originalTrackUrl;
-                } else {
-                    streamUrl = this.api.extractStreamUrlFromManifest(trackData.info.manifest);
+                let backendStreamUrl = null;
+                if (window.BACKEND_URL) {
+                    backendStreamUrl = cachedIsBackend
+                        ? cachedPreload
+                        : await this.api.getBackendStreamUrl(track.id, this.quality);
                 }
 
-                // Handle playback
-                if (streamUrl && streamUrl.startsWith('blob:') && !track.isLocal) {
-                    // It's likely a DASH manifest blob URL
-                    if (this.dashInitialized) {
-                        this.dashPlayer.attachSource(streamUrl);
-                    } else {
-                        this.dashPlayer.initialize(this.audio, streamUrl, true);
-                        this.dashInitialized = true;
-                    }
-
-                    if (startTime > 0) {
-                        this.dashPlayer.seek(startTime);
-                    }
-                } else {
+                if (backendStreamUrl) {
                     if (this.dashInitialized) {
                         this.dashPlayer.reset();
                         this.dashInitialized = false;
                     }
-                    this.audio.src = streamUrl;
+
+                    this.currentRgValues = null;
+                    this.applyReplayGain();
+
+                    this.audio.src = backendStreamUrl;
 
                     // Wait for audio to be ready before playing
                     await new Promise((resolve, reject) => {
@@ -548,11 +522,62 @@ export class Player {
                             reject(new Error('Timeout waiting for audio to load'));
                         }, 10000);
                     });
-
                     if (startTime > 0) {
                         this.audio.currentTime = startTime;
                     }
                     await this.audio.play();
+                } else {
+                    if (window.BACKEND_URL) {
+                        void this.triggerServerDownload(track.id, this.quality);
+                    }
+
+                    // Get track data for ReplayGain (should be cached by API)
+                    const trackData = await this.api.getTrack(track.id, this.quality);
+
+                    if (trackData && trackData.info) {
+                        this.currentRgValues = {
+                            trackReplayGain: trackData.info.trackReplayGain,
+                            trackPeakAmplitude: trackData.info.trackPeakAmplitude,
+                            albumReplayGain: trackData.info.albumReplayGain,
+                            albumPeakAmplitude: trackData.info.albumPeakAmplitude,
+                        };
+                    } else {
+                        this.currentRgValues = null;
+                    }
+                    this.applyReplayGain();
+
+                    if (cachedPreload) {
+                        streamUrl = cachedPreload;
+                    } else if (trackData.originalTrackUrl) {
+                        streamUrl = trackData.originalTrackUrl;
+                    } else {
+                        streamUrl = this.api.extractStreamUrlFromManifest(trackData.info.manifest);
+                    }
+
+                    // Handle playback
+                    if (streamUrl && streamUrl.startsWith('blob:') && !track.isLocal) {
+                        // It's likely a DASH manifest blob URL
+                        if (this.dashInitialized) {
+                            this.dashPlayer.attachSource(streamUrl);
+                        } else {
+                            this.dashPlayer.initialize(this.audio, streamUrl, true);
+                            this.dashInitialized = true;
+                        }
+
+                        if (startTime > 0) {
+                            this.dashPlayer.seek(startTime);
+                        }
+                    } else {
+                        if (this.dashInitialized) {
+                            this.dashPlayer.reset();
+                            this.dashInitialized = false;
+                        }
+                        this.audio.src = streamUrl;
+                        if (startTime > 0) {
+                            this.audio.currentTime = startTime;
+                        }
+                        await this.audio.play();
+                    }
                 }
             }
 

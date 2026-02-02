@@ -951,11 +951,43 @@ export class LosslessAPI {
         return result;
     }
 
+    async getBackendStreamUrl(id, quality = 'HI_RES_LOSSLESS') {
+        if (!window.BACKEND_URL) return null;
+
+        const encodedId = encodeURIComponent(id);
+        const encodedQuality = encodeURIComponent(quality);
+        const statusUrl = `${window.BACKEND_URL}/api/stream/status/${encodedId}?quality=${encodedQuality}`;
+
+        try {
+            const response = await fetch(statusUrl, { signal: AbortSignal.timeout(1500) });
+            if (!response.ok) return null;
+            const data = await response.json();
+            if (data?.status === 'cached' || data?.available === true) {
+                return `${window.BACKEND_URL}/api/stream/${encodedId}?quality=${encodedQuality}`;
+            }
+        } catch {
+            return null;
+        }
+
+        return null;
+    }
+
     async getStreamUrl(id, quality = 'HI_RES_LOSSLESS') {
         const cacheKey = `stream_${id}_${quality}`;
 
-        if (this.streamCache.has(cacheKey)) {
-            return this.streamCache.get(cacheKey);
+        const cached = this.streamCache.get(cacheKey);
+        if (cached && window.BACKEND_URL && cached.startsWith(window.BACKEND_URL)) {
+            return cached;
+        }
+
+        const backendUrl = await this.getBackendStreamUrl(id, quality);
+        if (backendUrl) {
+            this.streamCache.set(cacheKey, backendUrl);
+            return backendUrl;
+        }
+
+        if (cached) {
+            return cached;
         }
 
         const lookup = await this.getTrack(id, quality);

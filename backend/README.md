@@ -47,6 +47,12 @@ Currently supported preferences:
 - Filename template (same tokens as the main frontend: `{trackNumber}`, `{artist}`, `{title}`, `{album}`, `{albumArtist}`, `{albumTitle}`, `{year}`)
 - Download quality (use playback quality or force `HI_RES_LOSSLESS`, `LOSSLESS`, `HIGH`, `LOW`)
 
+The admin UI includes a basic database explorer to inspect and edit rows in:
+
+- `admin_settings`
+- `files`
+- `metadata`
+
 ### Database
 
 The backend uses SQLite via Node's built-in `node:sqlite` module to store admin settings, file records, and track metadata.

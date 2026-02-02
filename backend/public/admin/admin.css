@@ -132,6 +132,55 @@ body {
     color: var(--ink);
 }
 
+.field textarea {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    font-size: 0.9rem;
+    font-family: 'Courier New', monospace;
+    background: #fff;
+    color: var(--ink);
+    resize: vertical;
+}
+
+.table-wrap {
+    margin-top: 16px;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    overflow: auto;
+    max-height: 320px;
+}
+
+#db-table-view {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+#db-table-view th,
+#db-table-view td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    white-space: nowrap;
+}
+
+#db-table-view thead {
+    position: sticky;
+    top: 0;
+    background: #f8f7f4;
+}
+
+#db-table-view tbody tr:hover {
+    background: #f1f1ee;
+    cursor: pointer;
+}
+
+#db-table-view tbody tr.is-selected {
+    background: #e6e8ee;
+}
+
 .field input:focus {
     outline: 2px solid rgba(15, 23, 42, 0.15);
     border-color: var(--accent);
