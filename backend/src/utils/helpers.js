@@ -100,3 +100,14 @@ export const buildTrackFilename = (track, template, extension) => {
     const normalizedExtension = String(extension || 'flac').replace(/^\./, '');
     return `${formatTemplate(resolvedTemplate, data)}.${normalizedExtension}`;
 };
+
+export const getCoverUrl = (id, size = '1280') => {
+    if (!id) return null;
+
+    if (typeof id === 'string' && (id.startsWith('http') || id.startsWith('blob:') || id.startsWith('assets/'))) {
+        return id;
+    }
+
+    const formattedId = String(id).replace(/-/g, '/');
+    return `https://resources.tidal.com/images/${formattedId}/${size}x${size}.jpg`;
+};

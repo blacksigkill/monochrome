@@ -25,13 +25,14 @@ Copy `.env.example` to `.env` and configure:
 ```env
 PORT=3001
 STORAGE_PATH=./storage/tracks
+DB_PATH=./storage/monochrome.db
 ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
 LOG_LEVEL=info
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=change-me
 ```
 
-**Note:** API instances and quality settings are sent from the frontend (user settings), not configured on the backend. This allows each user to use their own preferred API instances and quality settings.
+**Note:** API instances are sent from the frontend (user settings). Download quality can be overridden in the admin UI if needed.
 
 ### Admin UI
 
@@ -39,12 +40,24 @@ The backend ships with a lightweight admin UI for server preferences:
 
 - URL: `http://localhost:3001/admin`
 - Protected with HTTP Basic Auth using `ADMIN_USERNAME` and `ADMIN_PASSWORD`
-- Preferences are stored in a local JSON file alongside storage (not in `.env`)
+- Preferences are stored in SQLite (not in `.env`)
 
 Currently supported preferences:
 
 - Filename template (same tokens as the main frontend: `{trackNumber}`, `{artist}`, `{title}`, `{album}`, `{albumArtist}`, `{albumTitle}`, `{year}`)
 - Download quality (use playback quality or force `HI_RES_LOSSLESS`, `LOSSLESS`, `HIGH`, `LOW`)
+
+### Database
+
+The backend uses SQLite via Node's built-in `node:sqlite` module to store admin settings, file records, and track metadata.
+
+Requires Node.js 22+ (SQLite support is currently marked experimental).
+
+Tables:
+
+- `admin_settings`
+- `files`
+- `metadata`
 
 ### Running
 
@@ -131,7 +144,10 @@ backend/
 │   ├── services/
 │   │   ├── api-service.js     # API client for streaming services
 │   │   ├── download-service.js # Download logic
-│   │   └── cache-service.js   # Cache management
+│   │   ├── cache-service.js   # Cache management
+│   │   └── metadata-service.js # Metadata persistence
+│   ├── db/
+│   │   └── index.js           # SQLite initialization
 │   ├── routes/
 │   │   └── download-routes.js # Express routes
 │   └── utils/
@@ -149,8 +165,8 @@ backend/
     - API instances (from user settings)
 3. Backend checks if track is already cached
 4. If not cached, backend uses the provided API instances to download the track
-5. Track is saved to `storage/tracks/{trackId}.{ext}`
-6. Metadata is saved as `{trackId}.json` for cache management
+5. Track is saved to `storage/tracks/...` based on the filename template
+6. Metadata and file records are saved to SQLite
 
 This architecture allows multiple users to use the same backend with their own API instance preferences.
 
