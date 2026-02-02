@@ -4,5 +4,8 @@ dist
 *.local
 .vite
 
+backend/storage/
+
 # Docker
 .env
+.idea/

@@ -309,6 +309,11 @@ export class Player {
 
         this.currentTrack = track;
 
+        // Trigger server-side download (non-blocking)
+        if (window.BACKEND_URL) {
+            void this.triggerServerDownload(track.id, this.quality);
+        }
+
         const trackTitle = getTrackTitle(track);
         const trackArtistsHTML = getTrackArtistsHTML(track);
         const yearDisplay = getTrackYearDisplay(track);
@@ -976,5 +981,34 @@ export class Player {
 
         updateBtn(timerBtn);
         updateBtn(timerBtnDesktop);
+    }
+
+    async triggerServerDownload(trackId, quality) {
+        try {
+            // Get streaming API instances from user settings
+            const apiInstances = await this.api.settings.getInstances('streaming');
+
+            if (!apiInstances || apiInstances.length === 0) {
+                console.debug('No API instances configured, skipping server download');
+                return;
+            }
+
+            const response = await fetch(`${window.BACKEND_URL}/api/download/trigger`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    trackId,
+                    quality,
+                    apiInstances,
+                }),
+            });
+
+            if (!response.ok) throw new Error('Backend request failed');
+
+            const result = await response.json();
+            console.debug('📥 Server download:', result.status);
+        } catch (error) {
+            console.debug('Server download failed:', error);
+        }
     }
 }

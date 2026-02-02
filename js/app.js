@@ -1,6 +1,13 @@
 //js/app.js
 import { LosslessAPI } from './api.js';
-import { apiSettings, themeManager, nowPlayingSettings, downloadQualitySettings, sidebarSettings } from './storage.js';
+import {
+    apiSettings,
+    themeManager,
+    nowPlayingSettings,
+    downloadQualitySettings,
+    sidebarSettings,
+    serverDownloadSettings,
+} from './storage.js';
 import { UIRenderer } from './ui.js';
 import { Player } from './player.js';
 import { MultiScrobbler } from './multi-scrobbler.js';
@@ -237,6 +244,27 @@ document.addEventListener('DOMContentLoaded', async () => {
             localStorage.setItem('playback-quality', 'LOSSLESS');
         }
     }
+
+    // Detect backend for server-side downloads
+    async function detectBackend() {
+        if (!serverDownloadSettings.isEnabled()) {
+            window.BACKEND_URL = null;
+            console.debug('⚠️ Server downloads disabled in settings');
+            return;
+        }
+
+        const backendUrl = serverDownloadSettings.getBackendUrl();
+        const result = await serverDownloadSettings.testConnection(backendUrl);
+        if (result.success) {
+            window.BACKEND_URL = backendUrl;
+            console.log('✅ Backend detected:', backendUrl);
+        } else {
+            window.BACKEND_URL = null;
+            console.debug('⚠️ Backend unavailable, server downloads disabled');
+        }
+    }
+
+    await detectBackend();
 
     const currentQuality = localStorage.getItem('playback-quality') || 'HI_RES_LOSSLESS';
     const player = new Player(audioPlayer, api, currentQuality);
