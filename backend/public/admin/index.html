@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Monochrome Download Server</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+            rel="stylesheet"
+        />
+        <link rel="stylesheet" href="./admin.css" />
+    </head>
+    <body>
+        <main class="shell">
+            <header class="hero">
+                <div class="hero-badge">Monochrome</div>
+                <h1>Download Server</h1>
+                <p>Manage server preferences without touching the container config.</p>
+            </header>
+
+            <section class="card">
+                <div class="card-header">
+                    <div>
+                        <h2>Preferences</h2>
+                        <p>Changes apply to new downloads only.</p>
+                    </div>
+                    <span class="pill">Protected</span>
+                </div>
+
+                <div class="field">
+                    <label for="filename-template">Filename template</label>
+                    <input
+                        id="filename-template"
+                        type="text"
+                        autocomplete="off"
+                        spellcheck="false"
+                        placeholder="{trackNumber} - {artist} - {title}"
+                    />
+                    <p class="help">
+                        Tokens: {trackNumber}, {artist}, {title}, {album}, {albumArtist}, {albumTitle}, {year}
+                    </p>
+                </div>
+
+                <div class="field">
+                    <label for="download-quality">Download quality</label>
+                    <select id="download-quality">
+                        <option value="player">Use playback quality</option>
+                        <option value="HI_RES_LOSSLESS">Hi-Res Lossless</option>
+                        <option value="LOSSLESS">Lossless</option>
+                        <option value="HIGH">High</option>
+                        <option value="LOW">Low</option>
+                    </select>
+                    <p class="help">Overrides the playback quality for server downloads.</p>
+                </div>
+
+                <div class="preview">
+                    <span class="label">Preview</span>
+                    <code id="filename-preview"></code>
+                </div>
+
+                <div class="actions">
+                    <button id="save-btn" class="primary">Save preferences</button>
+                    <button id="reset-btn" class="secondary">Reset default</button>
+                </div>
+
+                <p id="status" class="status" role="status" aria-live="polite"></p>
+            </section>
+
+            <section class="card muted">
+                <h2>Notes</h2>
+                <ul class="notes">
+                    <li>Extensions are appended automatically.</li>
+                    <li>Templates are sanitized to keep filesystem-safe names.</li>
+                </ul>
+            </section>
+        </main>
+
+        <script src="./admin.js"></script>
+    </body>
+</html>

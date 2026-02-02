@@ -1,0 +1,236 @@
+* {
+    box-sizing: border-box;
+}
+
+:root {
+    color-scheme: light;
+    font-family:
+        'Inter',
+        system-ui,
+        -apple-system,
+        sans-serif;
+    --bg: #f5f3ef;
+    --bg-accent: #e2ded7;
+    --card: #ffffff;
+    --ink: #151515;
+    --muted: #6b6b6b;
+    --border: #dedbd5;
+    --accent: #0f172a;
+    --accent-soft: #f0f2f6;
+    --shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    background: radial-gradient(120% 120% at 10% 0%, #faf8f5 0%, var(--bg) 45%, #efece7 100%);
+    color: var(--ink);
+}
+
+.shell {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 64px 24px 80px;
+    display: grid;
+    gap: 28px;
+}
+
+.hero {
+    display: grid;
+    gap: 12px;
+}
+
+.hero-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: #ffffff;
+    border: 1px solid var(--border);
+    font-size: 0.75rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    width: fit-content;
+}
+
+.hero h1 {
+    font-size: clamp(2rem, 4vw, 3rem);
+    margin: 0;
+}
+
+.hero p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 1rem;
+    max-width: 480px;
+}
+
+.card {
+    background: var(--card);
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    padding: 28px;
+    box-shadow: var(--shadow);
+}
+
+.card.muted {
+    background: linear-gradient(160deg, #ffffff 0%, #f7f5f2 100%);
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.card-header h2 {
+    margin: 0 0 6px;
+}
+
+.card-header p {
+    margin: 0;
+    color: var(--muted);
+}
+
+.pill {
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.field {
+    display: grid;
+    gap: 8px;
+}
+
+.field label {
+    font-weight: 600;
+}
+
+.field input {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    font-size: 0.95rem;
+    background: #fff;
+    color: var(--ink);
+}
+
+.field select {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    font-size: 0.95rem;
+    background: #fff;
+    color: var(--ink);
+}
+
+.field input:focus {
+    outline: 2px solid rgba(15, 23, 42, 0.15);
+    border-color: var(--accent);
+}
+
+.help {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
+.preview {
+    margin-top: 18px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1px dashed var(--border);
+    display: grid;
+    gap: 6px;
+    background: #fafafa;
+}
+
+.preview .label {
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.preview code {
+    font-family: 'Courier New', monospace;
+    font-size: 0.95rem;
+}
+
+.actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 24px;
+    flex-wrap: wrap;
+}
+
+button {
+    border-radius: 999px;
+    padding: 10px 18px;
+    font-weight: 600;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition:
+        transform 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+button:active {
+    transform: translateY(1px);
+}
+
+.primary {
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 8px 16px rgba(15, 23, 42, 0.15);
+}
+
+.secondary {
+    background: #fff;
+    color: var(--accent);
+    border-color: var(--border);
+}
+
+.status {
+    margin-top: 16px;
+    font-size: 0.9rem;
+    color: var(--muted);
+    min-height: 1.2rem;
+}
+
+.status[data-state='success'] {
+    color: #0f766e;
+}
+
+.status[data-state='error'] {
+    color: #b42318;
+}
+
+.notes {
+    margin: 12px 0 0;
+    padding-left: 18px;
+    color: var(--muted);
+}
+
+.notes li {
+    margin-bottom: 8px;
+}
+
+@media (max-width: 640px) {
+    .card {
+        padding: 22px;
+    }
+
+    .actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}

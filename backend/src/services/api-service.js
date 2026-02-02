@@ -154,6 +154,21 @@ export class APIService {
         return this.extractStreamUrlFromDecodedManifest(decoded);
     }
 
+    async getTrackMetadata(id) {
+        const response = await this.fetchWithRetry(`/info/?id=${id}`);
+        const json = await response.json();
+        const data = json.data ?? json;
+
+        const items = Array.isArray(data) ? data : [data];
+        const found = items.find((item) => item?.id == id || item?.item?.id == id);
+
+        if (found) {
+            return found.item || found;
+        }
+
+        throw new Error('Track metadata not found');
+    }
+
     async getTrack(id, quality = 'HI_RES_LOSSLESS') {
         const response = await this.fetchWithRetry(`/track/?id=${id}&quality=${quality}`, { type: 'streaming' });
         const jsonResponse = await response.json();
