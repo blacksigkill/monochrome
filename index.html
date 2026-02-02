@@ -3664,6 +3664,48 @@
                                     </div>
                                     <button id="custom-db-btn" class="btn-secondary">Configure</button>
                                 </div>
+                                <div class="setting-item">
+                                    <div class="info">
+                                        <span class="label">Server-Side Downloads</span>
+                                        <span class="description">
+                                            Automatically download tracks to a backend server when playing</span
+                                        >
+                                    </div>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="server-downloads-toggle" />
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                                <div
+                                    id="server-downloads-config"
+                                    style="
+                                        display: none;
+                                        margin-left: 1rem;
+                                        padding: 1rem;
+                                        border-left: 2px solid var(--border);
+                                    "
+                                >
+                                    <div class="setting-item" style="border: none; padding: 0.5rem 0">
+                                        <div class="info">
+                                            <span class="label">Backend URL</span>
+                                            <span class="description">URL of your backend server</span>
+                                        </div>
+                                        <div style="display: flex; gap: 0.5rem; align-items: center">
+                                            <input
+                                                type="text"
+                                                id="backend-url-input"
+                                                class="template-input"
+                                                placeholder="http://localhost:3001"
+                                                style="flex: 1; max-width: none"
+                                            />
+                                            <button id="test-backend-connection-btn" class="btn-secondary">Test</button>
+                                        </div>
+                                    </div>
+                                    <div
+                                        id="backend-connection-status"
+                                        style="padding: 0.5rem 0; font-size: 0.875rem; color: var(--muted-foreground)"
+                                    ></div>
+                                </div>
                                 <div id="api-instance-manager">
                                     <div class="setting-item" style="padding-bottom: 1rem; border: none">
                                         <div class="info">
