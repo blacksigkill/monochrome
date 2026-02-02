@@ -27,18 +27,35 @@ PORT=3001
 STORAGE_PATH=./storage/tracks
 ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
 LOG_LEVEL=info
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=change-me
 ```
 
 **Note:** API instances and quality settings are sent from the frontend (user settings), not configured on the backend. This allows each user to use their own preferred API instances and quality settings.
 
+### Admin UI
+
+The backend ships with a lightweight admin UI for server preferences:
+
+- URL: `http://localhost:3001/admin`
+- Protected with HTTP Basic Auth using `ADMIN_USERNAME` and `ADMIN_PASSWORD`
+- Preferences are stored in a local JSON file alongside storage (not in `.env`)
+
+Currently supported preferences:
+
+- Filename template (same tokens as the main frontend: `{trackNumber}`, `{artist}`, `{title}`, `{album}`, `{albumArtist}`, `{albumTitle}`, `{year}`)
+- Download quality (use playback quality or force `HI_RES_LOSSLESS`, `LOSSLESS`, `HIGH`, `LOW`)
+
 ### Running
 
 Development mode (with auto-reload):
+
 ```bash
 npm run dev
 ```
 
 Production mode:
+
 ```bash
 npm start
 ```
@@ -50,15 +67,12 @@ npm start
 Triggers a track download.
 
 **Request Body:**
+
 ```json
 {
-  "trackId": "123456",
-  "quality": "HI_RES_LOSSLESS",
-  "apiInstances": [
-    "https://triton.squid.wtf",
-    "https://wolf.qqdl.site",
-    "https://monochrome-api.samidy.com"
-  ]
+    "trackId": "123456",
+    "quality": "HI_RES_LOSSLESS",
+    "apiInstances": ["https://triton.squid.wtf", "https://wolf.qqdl.site", "https://monochrome-api.samidy.com"]
 }
 ```
 
@@ -67,11 +81,12 @@ Triggers a track download.
 - `apiInstances` (required): Array of API instance URLs to use
 
 **Response:**
+
 ```json
 {
-  "success": true,
-  "status": "queued",
-  "trackId": "123456"
+    "success": true,
+    "status": "queued",
+    "trackId": "123456"
 }
 ```
 
@@ -80,14 +95,16 @@ Triggers a track download.
 Checks if a track is cached.
 
 **Query Parameters:**
+
 - `quality` (optional): Audio quality (default: HI_RES_LOSSLESS)
 
 **Response:**
+
 ```json
 {
-  "status": "cached",
-  "path": "/path/to/track.flac",
-  "trackId": "123456"
+    "status": "cached",
+    "path": "/path/to/track.flac",
+    "trackId": "123456"
 }
 ```
 
@@ -96,10 +113,11 @@ Checks if a track is cached.
 Health check endpoint.
 
 **Response:**
+
 ```json
 {
-  "status": "ok",
-  "timestamp": "2026-02-02T12:00:00.000Z"
+    "status": "ok",
+    "timestamp": "2026-02-02T12:00:00.000Z"
 }
 ```
 
@@ -126,9 +144,9 @@ backend/
 
 1. Frontend detects backend availability on startup
 2. When a track is played, frontend sends a download trigger request with:
-   - Track ID
-   - Desired quality (from user settings)
-   - API instances (from user settings)
+    - Track ID
+    - Desired quality (from user settings)
+    - API instances (from user settings)
 3. Backend checks if track is already cached
 4. If not cached, backend uses the provided API instances to download the track
 5. Track is saved to `storage/tracks/{trackId}.{ext}`
