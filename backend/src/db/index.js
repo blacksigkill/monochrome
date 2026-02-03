@@ -66,6 +66,21 @@ db.exec(`
 
     CREATE INDEX IF NOT EXISTS idx_artist_metadata_artist_id ON artist_metadata(artist_id);
 
+    CREATE TABLE IF NOT EXISTS image_assets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        owner_type TEXT NOT NULL,
+        owner_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        size INTEGER,
+        url TEXT,
+        file_path TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(owner_type, owner_id, kind, size)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_image_assets_owner ON image_assets(owner_type, owner_id);
+    CREATE INDEX IF NOT EXISTS idx_image_assets_kind ON image_assets(kind);
+
     CREATE TABLE IF NOT EXISTS files (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         track_id TEXT NOT NULL,
