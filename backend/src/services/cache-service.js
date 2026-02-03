@@ -9,6 +9,11 @@ export class CacheService {
         this.storagePath = path.resolve(config.storagePath);
     }
 
+    normalizeTrackId(trackId) {
+        if (trackId === null || trackId === undefined) return '';
+        return String(trackId).trim();
+    }
+
     async ensureStorageDir() {
         try {
             await fs.mkdir(this.storagePath, { recursive: true });
@@ -19,22 +24,61 @@ export class CacheService {
     }
 
     async checkCache(trackId, quality) {
-        const row = db.prepare('SELECT file_path FROM files WHERE track_id = ? AND quality = ?').get(trackId, quality);
+        const normalizedId = this.normalizeTrackId(trackId);
+        const numericId = Number.parseInt(normalizedId, 10);
+        const hasNumeric = Number.isFinite(numericId) && String(numericId) === normalizedId;
+
+        const row = hasNumeric
+            ? db
+                  .prepare('SELECT file_path FROM files WHERE (track_id = ? OR track_id = ?) AND quality = ?')
+                  .get(normalizedId, numericId, quality)
+            : db.prepare('SELECT file_path FROM files WHERE track_id = ? AND quality = ?').get(normalizedId, quality);
 
         if (row?.file_path) {
             try {
                 await fs.access(row.file_path);
                 return row.file_path;
             } catch {
-                this.removeFileRecord(trackId, quality);
+                this.removeFileRecord(normalizedId, quality);
             }
         }
+        return null;
+    }
+
+    async checkAnyCache(trackId) {
+        const normalizedId = this.normalizeTrackId(trackId);
+        const numericId = Number.parseInt(normalizedId, 10);
+        const hasNumeric = Number.isFinite(numericId) && String(numericId) === normalizedId;
+
+        const rows = hasNumeric
+            ? db
+                  .prepare(
+                      'SELECT file_path, quality FROM files WHERE (track_id = ? OR track_id = ?) ORDER BY downloaded_at DESC'
+                  )
+                  .all(normalizedId, numericId)
+            : db
+                  .prepare('SELECT file_path, quality FROM files WHERE track_id = ? ORDER BY downloaded_at DESC')
+                  .all(normalizedId);
+
+        if (!rows || rows.length === 0) return null;
+
+        for (const row of rows) {
+            if (!row?.file_path) continue;
+            try {
+                await fs.access(row.file_path);
+                return { filePath: row.file_path, quality: row.quality };
+            } catch {
+                this.removeFileRecord(normalizedId, row.quality);
+            }
+        }
+
         return null;
     }
 
     async saveCache({ trackId, quality, filePath, sizeBytes, extension, albumId, coverPath }) {
         try {
             const now = new Date().toISOString();
+            const normalizedId = this.normalizeTrackId(trackId);
 
             db.prepare(
                 `
@@ -49,7 +93,7 @@ export class CacheService {
                         downloaded_at = excluded.downloaded_at
                 `
             ).run({
-                trackId,
+                trackId: normalizedId,
                 albumId: albumId || null,
                 quality,
                 extension: extension || null,
@@ -73,7 +117,19 @@ export class CacheService {
 
     removeFileRecord(trackId, quality) {
         try {
-            db.prepare('DELETE FROM files WHERE track_id = ? AND quality = ?').run(trackId, quality);
+            const normalizedId = this.normalizeTrackId(trackId);
+            const numericId = Number.parseInt(normalizedId, 10);
+            const hasNumeric = Number.isFinite(numericId) && String(numericId) === normalizedId;
+
+            if (hasNumeric) {
+                db.prepare('DELETE FROM files WHERE (track_id = ? OR track_id = ?) AND quality = ?').run(
+                    normalizedId,
+                    numericId,
+                    quality
+                );
+            } else {
+                db.prepare('DELETE FROM files WHERE track_id = ? AND quality = ?').run(normalizedId, quality);
+            }
         } catch (error) {
             logger.warn(`Failed to remove file record: ${error.message}`);
         }
