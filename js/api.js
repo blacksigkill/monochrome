@@ -959,11 +959,15 @@ export class LosslessAPI {
         const statusUrl = `${window.BACKEND_URL}/api/stream/status/${encodedId}?quality=${encodedQuality}`;
 
         try {
-            const response = await fetch(statusUrl, { signal: AbortSignal.timeout(1500) });
+            const response = await fetch(statusUrl, {
+                signal: AbortSignal.timeout(1500),
+                cache: 'no-store',
+            });
             if (!response.ok) return null;
+
             const data = await response.json();
-            if (data?.status === 'cached' || data?.available === true) {
-                return `${window.BACKEND_URL}/api/stream/${encodedId}?quality=${encodedQuality}`;
+            if (data?.available && data?.streamPath) {
+                return `${window.BACKEND_URL}${data.streamPath}`;
             }
         } catch {
             return null;

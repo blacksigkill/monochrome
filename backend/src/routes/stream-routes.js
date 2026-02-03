@@ -116,9 +116,9 @@ const streamFile = async (req, res, filePath) => {
 };
 
 const resolveCachedFile = async (trackId, quality) => {
-    const status = await downloadService.getStatus(trackId, quality);
+    const status = await downloadService.getCachedFile(trackId, quality, { fallback: true });
     if (status?.status === 'cached' && status.path) {
-        return status.path;
+        return status;
     }
     return null;
 };
@@ -132,12 +132,21 @@ router.get(
         }
 
         const quality = req.query.quality || DEFAULT_QUALITY;
-        const status = await downloadService.getStatus(trackId, quality);
+        const status = await downloadService.getCachedFile(trackId, quality, { fallback: true });
+
+        res.setHeader('Cache-Control', 'no-store');
+
+        const resolvedQuality = status.quality || quality;
+        const streamPath =
+            status.status === 'cached'
+                ? `/api/stream/${encodeURIComponent(trackId)}?quality=${encodeURIComponent(resolvedQuality)}`
+                : null;
 
         res.json({
             trackId,
             status: status.status,
             available: status.status === 'cached',
+            streamPath,
         });
     })
 );
@@ -149,14 +158,14 @@ const handleStreamRequest = asyncHandler(async (req, res) => {
     }
 
     const quality = req.query.quality || DEFAULT_QUALITY;
-    const filePath = await resolveCachedFile(trackId, quality);
+    const cached = await resolveCachedFile(trackId, quality);
 
-    if (!filePath) {
+    if (!cached) {
         return res.status(404).json({ error: 'Track not cached' });
     }
 
     try {
-        return await streamFile(req, res, filePath);
+        return await streamFile(req, res, cached.path);
     } catch (error) {
         if (error.code === 'ENOENT') {
             return res.status(404).json({ error: 'Track not found' });
