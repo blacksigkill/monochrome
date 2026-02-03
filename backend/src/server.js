@@ -4,6 +4,8 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { config } from './config.js';
 import downloadRoutes from './routes/download-routes.js';
+import imageRoutes from './routes/image-routes.js';
+import metadataRoutes from './routes/metadata-routes.js';
 import streamRoutes from './routes/stream-routes.js';
 import adminRoutes from './routes/admin-routes.js';
 import { requireAdminAuth } from './middleware/admin-auth.js';
@@ -34,6 +36,8 @@ app.use((req, res, next) => {
 
 // Routes
 app.use('/api/download', downloadRoutes);
+app.use('/api/images', imageRoutes);
+app.use('/api/metadata', metadataRoutes);
 app.use('/api/stream', streamRoutes);
 app.use('/api/admin', requireAdminAuth, adminRoutes);
 app.use('/admin', requireAdminAuth, express.static(adminStaticPath));
