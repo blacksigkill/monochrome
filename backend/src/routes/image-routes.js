@@ -34,8 +34,13 @@ router.get(
             return res.status(400).json({ error: 'albumId is required' });
         }
 
-        const albumMeta = metadataService.getAlbumMetadata(albumId);
-        const coverPath = albumMeta?.coverPath || cacheService.getAlbumCoverPath(albumId);
+        const requestedSize = Number.parseInt(req.query.size, 10);
+        const asset = metadataService.getBestImageAsset('album', albumId, 'cover', requestedSize);
+        const coverPath =
+            asset?.filePath ||
+            metadataService.getAlbumMetadata(albumId)?.coverPath ||
+            cacheService.getAlbumCoverPath(albumId);
+
         if (!coverPath || !(await fileExists(coverPath))) {
             return res.status(404).json({ error: 'Album cover not found' });
         }
@@ -54,8 +59,9 @@ router.get(
             return res.status(400).json({ error: 'artistId is required' });
         }
 
-        const artistMeta = metadataService.getArtistMetadata(artistId);
-        const picturePath = artistMeta?.picturePath;
+        const requestedSize = Number.parseInt(req.query.size, 10);
+        const asset = metadataService.getBestImageAsset('artist', artistId, 'picture', requestedSize);
+        const picturePath = asset?.filePath || metadataService.getArtistMetadata(artistId)?.picturePath;
         if (!picturePath || !(await fileExists(picturePath))) {
             return res.status(404).json({ error: 'Artist picture not found' });
         }

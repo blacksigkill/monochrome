@@ -310,6 +310,10 @@ export class LosslessAPI {
                 items: preparedTracks,
             };
 
+            if (window.BACKEND_URL) {
+                normalized.items.forEach((item) => this.queueBackendTrack(item));
+            }
+
             await this.cache.set('search_tracks', query, result);
             return result;
         } catch (error) {
@@ -327,10 +331,15 @@ export class LosslessAPI {
             const response = await this.fetchWithRetry(`/search/?a=${encodeURIComponent(query)}`, options);
             const data = await response.json();
             const normalized = this.normalizeSearchResponse(data, 'artists');
+            const preparedItems = normalized.items.map((a) => this.prepareArtist(a));
             const result = {
                 ...normalized,
-                items: normalized.items.map((a) => this.prepareArtist(a)),
+                items: preparedItems,
             };
+
+            if (window.BACKEND_URL) {
+                normalized.items.forEach((item) => this.queueBackendArtist(item));
+            }
 
             await this.cache.set('search_artists', query, result);
             return result;
@@ -354,6 +363,10 @@ export class LosslessAPI {
                 ...normalized,
                 items: this.deduplicateAlbums(preparedItems),
             };
+
+            if (window.BACKEND_URL) {
+                normalized.items.forEach((item) => this.queueBackendAlbum(item));
+            }
 
             await this.cache.set('search_albums', query, result);
             return result;
@@ -391,9 +404,11 @@ export class LosslessAPI {
         if (cached) return cached;
 
         let jsonData;
+        let usedBackend = false;
         const backendAlbum = await this.getBackendMetadata('album', id);
         if (backendAlbum) {
             jsonData = backendAlbum;
+            usedBackend = true;
         } else {
             const response = await this.fetchWithRetry(`/album/?id=${id}`);
             jsonData = await response.json();
@@ -517,6 +532,11 @@ export class LosslessAPI {
 
         const result = { album, tracks };
 
+        if (!usedBackend) {
+            this.queueBackendAlbum(jsonData);
+            tracks.forEach((item) => this.queueBackendTrack(item));
+        }
+
         await this.cache.set('album', id, result);
         return result;
     }
@@ -626,6 +646,10 @@ export class LosslessAPI {
 
         const result = { playlist, tracks };
 
+        if (window.BACKEND_URL) {
+            tracks.forEach((item) => this.queueBackendTrack(item));
+        }
+
         await this.cache.set('playlist', id, result);
         return result;
     }
@@ -659,6 +683,10 @@ export class LosslessAPI {
         };
 
         const result = { mix, tracks };
+
+        if (window.BACKEND_URL) {
+            tracks.forEach((item) => this.queueBackendTrack(item));
+        }
         await this.cache.set('mix', id, result);
         return result;
     }
@@ -669,11 +697,13 @@ export class LosslessAPI {
 
         let primaryJsonData;
         let contentJsonData;
+        let usedBackend = false;
         const backendArtist = await this.getBackendMetadata('artist', artistId);
 
         if (backendArtist) {
             primaryJsonData = backendArtist.primary || backendArtist;
             contentJsonData = backendArtist.content || {};
+            usedBackend = true;
         } else {
             const [primaryResponse, contentResponse] = await Promise.all([
                 this.fetchWithRetry(`/artist/?id=${artistId}`),
@@ -762,6 +792,13 @@ export class LosslessAPI {
 
         const result = { ...artist, albums, eps, tracks };
 
+        if (!usedBackend) {
+            this.queueBackendArtist({ primary: primaryJsonData, content: contentJsonData });
+            albums.forEach((item) => this.queueBackendAlbum(item));
+            eps.forEach((item) => this.queueBackendAlbum(item));
+            tracks.forEach((item) => this.queueBackendTrack(item));
+        }
+
         await this.cache.set('artist', artistId, result);
         return result;
     }
@@ -778,6 +815,10 @@ export class LosslessAPI {
             const items = data.artists || data.items || data.data || (Array.isArray(data) ? data : []);
 
             const result = items.map((artist) => this.prepareArtist(artist));
+
+            if (window.BACKEND_URL) {
+                items.forEach((item) => this.queueBackendArtist(item));
+            }
 
             await this.cache.set('similar_artists', artistId, result);
             return result;
@@ -798,6 +839,10 @@ export class LosslessAPI {
             const items = data.items || data.albums || data.data || (Array.isArray(data) ? data : []);
 
             const result = items.map((album) => this.prepareAlbum(album));
+
+            if (window.BACKEND_URL) {
+                items.forEach((item) => this.queueBackendAlbum(item));
+            }
 
             await this.cache.set('similar_albums', albumId, result);
             return result;
@@ -887,7 +932,13 @@ export class LosslessAPI {
         console.log(`Total recommended tracks found: ${recommendedTracks.length}`);
 
         const shuffled = recommendedTracks.sort(() => 0.5 - Math.random());
-        return shuffled.slice(0, limit);
+        const result = shuffled.slice(0, limit);
+
+        if (window.BACKEND_URL) {
+            result.forEach((item) => this.queueBackendTrack(item));
+        }
+
+        return result;
     }
 
     normalizeTrackResponse(apiResponse) {
@@ -914,9 +965,11 @@ export class LosslessAPI {
         if (cached) return cached;
 
         let json;
+        let usedBackend = false;
         const backendTrack = await this.getBackendMetadata('track', id);
         if (backendTrack) {
             json = backendTrack;
+            usedBackend = true;
         } else {
             const response = await this.fetchWithRetry(`/info/?id=${id}`, { type: 'api' });
             json = await response.json();
@@ -929,6 +982,9 @@ export class LosslessAPI {
 
         if (found) {
             track = this.prepareTrack(found.item || found);
+            if (!usedBackend) {
+                this.queueBackendTrack(found.item || found);
+            }
             await this.cache.set('track', cacheKey, track);
             return track;
         }
@@ -965,6 +1021,33 @@ export class LosslessAPI {
         } catch {
             return null;
         }
+    }
+
+    queueBackendMetadata(type, body) {
+        if (!window.BACKEND_URL) return;
+        const encodedType = encodeURIComponent(type);
+        const url = `${window.BACKEND_URL}/api/metadata/${encodedType}`;
+
+        fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body || {}),
+        }).catch(() => {});
+    }
+
+    queueBackendTrack(track) {
+        if (!track) return;
+        this.queueBackendMetadata('track', { track });
+    }
+
+    queueBackendAlbum(payload) {
+        if (!payload) return;
+        this.queueBackendMetadata('album', { payload });
+    }
+
+    queueBackendArtist(payload) {
+        if (!payload) return;
+        this.queueBackendMetadata('artist', { payload });
     }
 
     async getBackendStreamUrl(id, quality = 'HI_RES_LOSSLESS') {
@@ -1160,7 +1243,12 @@ export class LosslessAPI {
         }
 
         if (typeof id === 'string' && id.startsWith('/api/images/')) {
-            return window.BACKEND_URL ? `${window.BACKEND_URL}${id}` : id;
+            const baseUrl = window.BACKEND_URL ? `${window.BACKEND_URL}${id}` : id;
+            if (size && !baseUrl.includes('size=')) {
+                const separator = baseUrl.includes('?') ? '&' : '?';
+                return `${baseUrl}${separator}size=${encodeURIComponent(size)}`;
+            }
+            return baseUrl;
         }
 
         if (typeof id === 'string' && (id.startsWith('http') || id.startsWith('blob:') || id.startsWith('assets/'))) {
@@ -1177,7 +1265,12 @@ export class LosslessAPI {
         }
 
         if (typeof id === 'string' && id.startsWith('/api/images/')) {
-            return window.BACKEND_URL ? `${window.BACKEND_URL}${id}` : id;
+            const baseUrl = window.BACKEND_URL ? `${window.BACKEND_URL}${id}` : id;
+            if (size && !baseUrl.includes('size=')) {
+                const separator = baseUrl.includes('?') ? '&' : '?';
+                return `${baseUrl}${separator}size=${encodeURIComponent(size)}`;
+            }
+            return baseUrl;
         }
 
         if (typeof id === 'string' && (id.startsWith('http') || id.startsWith('blob:') || id.startsWith('assets/'))) {
