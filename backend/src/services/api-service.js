@@ -169,6 +169,23 @@ export class APIService {
         throw new Error('Track metadata not found');
     }
 
+    async getAlbumMetadata(id) {
+        const response = await this.fetchWithRetry(`/album/?id=${id}`);
+        return response.json();
+    }
+
+    async getArtistMetadata(id) {
+        const [primaryResponse, contentResponse] = await Promise.all([
+            this.fetchWithRetry(`/artist/?id=${id}`),
+            this.fetchWithRetry(`/artist/?f=${id}&skip_tracks=true`),
+        ]);
+
+        const primary = await primaryResponse.json();
+        const content = await contentResponse.json();
+
+        return { primary, content };
+    }
+
     async getTrack(id, quality = 'HI_RES_LOSSLESS') {
         const response = await this.fetchWithRetry(`/track/?id=${id}&quality=${quality}`, { type: 'streaming' });
         const jsonResponse = await response.json();
