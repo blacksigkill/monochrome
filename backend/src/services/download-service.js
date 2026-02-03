@@ -18,6 +18,7 @@ export class DownloadService {
         this.preferencesService = new PreferencesService();
         this.imageService = new ImageService();
         this.activeDownloads = new Map();
+        this.activeMetadataRefresh = new Set();
     }
 
     async downloadTrack(trackId, quality, apiInstances) {
@@ -40,6 +41,15 @@ export class DownloadService {
             const cached = await this.cacheService.checkCache(trackId, resolvedQuality);
             if (cached) {
                 logger.info(`Track ${trackId} already cached at ${cached}`);
+                const trackMeta = this.metadataService.getTrackMetadata(trackId);
+                const albumId = trackMeta ? this.resolveAlbumId(trackMeta, null) : null;
+                const artistId = trackMeta ? this.resolveArtistId(trackMeta) : null;
+                const needsAlbumMeta = albumId && !this.metadataService.getAlbumMetadata(albumId);
+                const needsArtistMeta = artistId && !this.metadataService.getArtistMetadata(artistId);
+
+                if (!trackMeta || needsAlbumMeta || needsArtistMeta) {
+                    void this.refreshMetadata(apiInstances, trackId, trackMeta, albumId);
+                }
                 return { status: 'cached', path: cached, trackId };
             }
 
@@ -141,6 +151,26 @@ export class DownloadService {
             } catch (error) {
                 logger.warn(`Failed to persist artist metadata for ${artistId}: ${error.message}`);
             }
+        }
+    }
+
+    async refreshMetadata(apiInstances, trackId, trackMeta, albumId) {
+        if (this.activeMetadataRefresh.has(trackId)) return;
+        this.activeMetadataRefresh.add(trackId);
+
+        try {
+            const apiService = new APIService(apiInstances);
+            const track = trackMeta || (await apiService.getTrackMetadata(trackId));
+            const metadata = this.metadataService.upsertTrackMetadata(trackId, track || {});
+
+            const resolvedAlbumId = albumId || this.resolveAlbumId(track, metadata);
+            const fallbackCoverPath = resolvedAlbumId ? this.cacheService.getAlbumCoverPath(resolvedAlbumId) : null;
+
+            await this.enrichMetadata(apiService, track, metadata, fallbackCoverPath);
+        } catch (error) {
+            logger.warn(`Failed to refresh metadata for ${trackId}: ${error.message}`);
+        } finally {
+            this.activeMetadataRefresh.delete(trackId);
         }
     }
 
