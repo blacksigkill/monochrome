@@ -111,3 +111,5 @@ export const getCoverUrl = (id, size = '1280') => {
     const formattedId = String(id).replace(/-/g, '/');
     return `https://resources.tidal.com/images/${formattedId}/${size}x${size}.jpg`;
 };
+
+export const getArtistPictureUrl = (id, size = '1280') => getCoverUrl(id, size);

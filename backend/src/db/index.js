@@ -42,6 +42,30 @@ db.exec(`
 
     CREATE INDEX IF NOT EXISTS idx_metadata_album_id ON metadata(album_id);
 
+    CREATE TABLE IF NOT EXISTS album_metadata (
+        album_id TEXT PRIMARY KEY,
+        title TEXT,
+        artist TEXT,
+        cover_url TEXT,
+        cover_path TEXT,
+        raw_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_album_metadata_album_id ON album_metadata(album_id);
+
+    CREATE TABLE IF NOT EXISTS artist_metadata (
+        artist_id TEXT PRIMARY KEY,
+        name TEXT,
+        picture_url TEXT,
+        picture_path TEXT,
+        bio TEXT,
+        raw_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_artist_metadata_artist_id ON artist_metadata(artist_id);
+
     CREATE TABLE IF NOT EXISTS files (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         track_id TEXT NOT NULL,
