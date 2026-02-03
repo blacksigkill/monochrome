@@ -105,6 +105,37 @@ export class DownloadService {
         return { status: 'not_found', trackId };
     }
 
+    async getCachedFile(trackId, quality, { fallback = false } = {}) {
+        const resolvedQuality = await this.resolveDownloadQuality(quality);
+        const cached = await this.cacheService.checkCache(trackId, resolvedQuality);
+        if (cached) {
+            return {
+                status: 'cached',
+                path: cached,
+                trackId,
+                quality: resolvedQuality,
+                fallback: false,
+            };
+        }
+
+        if (!fallback) {
+            return { status: 'not_found', trackId };
+        }
+
+        const anyCached = await this.cacheService.checkAnyCache(trackId);
+        if (anyCached?.filePath) {
+            return {
+                status: 'cached',
+                path: anyCached.filePath,
+                trackId,
+                quality: anyCached.quality,
+                fallback: true,
+            };
+        }
+
+        return { status: 'not_found', trackId };
+    }
+
     getDownloadKey(trackId, quality) {
         return `${trackId}_${quality}`;
     }
