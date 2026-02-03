@@ -248,6 +248,7 @@ export class MetadataService {
             artist,
             coverUrl,
             coverPath: coverPath || null,
+            coverId,
         };
     }
 
@@ -306,6 +307,7 @@ export class MetadataService {
             pictureUrl,
             picturePath: picturePath || null,
             bio,
+            pictureId,
         };
     }
 
@@ -353,5 +355,90 @@ export class MetadataService {
             artistId,
             picturePath,
         });
+    }
+
+    upsertImageAsset({ ownerType, ownerId, kind, size, url, filePath }) {
+        if (!ownerType || !ownerId || !kind || !filePath) return;
+        const now = new Date().toISOString();
+        const normalizedSize = Number.isFinite(size) ? size : -1;
+
+        db.prepare(
+            `
+                INSERT INTO image_assets (
+                    owner_type,
+                    owner_id,
+                    kind,
+                    size,
+                    url,
+                    file_path,
+                    created_at
+                )
+                VALUES (
+                    @ownerType,
+                    @ownerId,
+                    @kind,
+                    @size,
+                    @url,
+                    @filePath,
+                    @createdAt
+                )
+                ON CONFLICT(owner_type, owner_id, kind, size) DO UPDATE SET
+                    url = excluded.url,
+                    file_path = excluded.file_path,
+                    created_at = excluded.created_at
+            `
+        ).run({
+            ownerType,
+            ownerId,
+            kind,
+            size: normalizedSize,
+            url: url || null,
+            filePath,
+            createdAt: now,
+        });
+    }
+
+    getImageAssets(ownerType, ownerId, kind) {
+        if (!ownerType || !ownerId) return [];
+        const rows = db
+            .prepare(
+                `
+                    SELECT size, file_path
+                    FROM image_assets
+                    WHERE owner_type = ? AND owner_id = ? AND (? IS NULL OR kind = ?)
+                    ORDER BY size ASC
+                `
+            )
+            .all(ownerType, ownerId, kind || null, kind || null);
+        if (!rows) return [];
+        return rows.map((row) => ({ size: row.size, filePath: row.file_path }));
+    }
+
+    getBestImageAsset(ownerType, ownerId, kind, targetSize) {
+        const assets = this.getImageAssets(ownerType, ownerId, kind);
+        if (!assets || assets.length === 0) return null;
+
+        const numericTarget = Number.isFinite(targetSize) ? Number(targetSize) : null;
+        if (!numericTarget) {
+            return assets[assets.length - 1] || null;
+        }
+
+        let candidate = null;
+        for (const asset of assets) {
+            if (!asset.size || asset.size < 1) continue;
+            if (asset.size >= numericTarget) {
+                candidate = asset;
+                break;
+            }
+        }
+
+        if (candidate) return candidate;
+
+        const sizedFallback = assets.filter((asset) => asset.size && asset.size > 0);
+        if (sizedFallback.length > 0) {
+            return sizedFallback[sizedFallback.length - 1];
+        }
+
+        return assets[assets.length - 1] || null;
     }
 }

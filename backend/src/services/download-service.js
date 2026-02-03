@@ -48,7 +48,7 @@ export class DownloadService {
                 const needsArtistMeta = artistId && !this.metadataService.getArtistMetadata(artistId);
 
                 if (!trackMeta || needsAlbumMeta || needsArtistMeta) {
-                    void this.refreshMetadata(apiInstances, trackId, trackMeta, albumId);
+                    void this.refreshMetadata(apiInstances, trackId, trackMeta, albumId, cached);
                 }
                 return { status: 'cached', path: cached, trackId };
             }
@@ -71,9 +71,7 @@ export class DownloadService {
             const resolvedExt = ext || detectExtension(buffer);
             const relativePath = await this.buildFilename(track, metadata, resolvedExt, trackId);
             const filePath = await this.resolveOutputPath(relativePath, trackId, resolvedExt);
-            const coverPath = await this.ensureCover(metadata, path.dirname(filePath));
-
-            await this.enrichMetadata(apiService, track, metadata, coverPath);
+            const coverPath = await this.enrichMetadata(apiService, track, metadata, filePath);
 
             await fs.writeFile(filePath, buffer);
             logger.info(`Track ${trackId} saved to ${filePath} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
@@ -117,44 +115,135 @@ export class DownloadService {
         return null;
     }
 
-    async enrichMetadata(apiService, track, metadata, coverPath) {
+    resolveArtistName(track, metadata) {
+        if (metadata?.albumArtist) return metadata.albumArtist;
+        if (metadata?.artist) return metadata.artist;
+        if (track?.artist?.name) return track.artist.name;
+        if (Array.isArray(track?.artists) && track.artists.length > 0) {
+            return track.artists[0]?.name || null;
+        }
+        return null;
+    }
+
+    resolveAlbumTitle(track, metadata) {
+        return metadata?.albumTitle || track?.album?.title || track?.album?.name || null;
+    }
+
+    resolveCoverIdFromTrack(track) {
+        const album = track?.album || {};
+        return (
+            album.cover ||
+            album.coverId ||
+            album.cover_id ||
+            album.image ||
+            album.cover?.id ||
+            track?.coverId ||
+            track?.cover_id ||
+            null
+        );
+    }
+
+    async enrichMetadata(apiService, track, metadata, trackPath) {
         const albumId = this.resolveAlbumId(track, metadata);
+        const artistId = this.resolveArtistId(track);
+        const albumTitle = this.resolveAlbumTitle(track, metadata);
+        const artistName = this.resolveArtistName(track, metadata);
+
+        let coverPath = null;
+        let albumDir = this.imageService.resolveAlbumDir({
+            trackPath,
+            artistName,
+            albumTitle,
+        });
+
         if (albumId) {
+            let albumRecord = null;
             try {
                 const albumPayload = await apiService.getAlbumMetadata(albumId);
-                const albumRecord = this.metadataService.upsertAlbumMetadata(albumId, albumPayload);
-                const albumCoverPath = await this.imageService.ensureAlbumCover({
-                    albumId,
-                    coverUrl: albumRecord?.coverUrl,
-                    fallbackCoverPath: coverPath,
-                });
-                if (albumCoverPath) {
-                    this.metadataService.updateAlbumCoverPath(albumId, albumCoverPath);
-                }
+                albumRecord = this.metadataService.upsertAlbumMetadata(albumId, albumPayload);
             } catch (error) {
                 logger.warn(`Failed to persist album metadata for ${albumId}: ${error.message}`);
             }
+
+            const coverId = albumRecord?.coverId || this.resolveCoverIdFromTrack(track);
+            const coverUrl = albumRecord?.coverUrl || metadata?.coverUrl || null;
+            const resolvedArtistName = albumRecord?.artist || artistName;
+            const resolvedAlbumTitle = albumRecord?.title || albumTitle;
+
+            const albumAssets = await this.imageService.ensureAlbumImages({
+                albumId,
+                artistName: resolvedArtistName,
+                albumTitle: resolvedAlbumTitle,
+                coverId,
+                coverUrl,
+                trackPath,
+            });
+
+            if (albumAssets.length > 0) {
+                albumDir = albumAssets[0].albumDir || albumDir;
+                albumAssets.forEach((asset) => {
+                    this.metadataService.upsertImageAsset({
+                        ownerType: 'album',
+                        ownerId: albumId,
+                        kind: 'cover',
+                        size: asset.size,
+                        url: asset.url,
+                        filePath: asset.filePath,
+                    });
+                });
+
+                const candidateCoverPath = this.imageService.buildAlbumImagePath(albumDir, null);
+                if (candidateCoverPath && (await this.fileExists(candidateCoverPath))) {
+                    coverPath = candidateCoverPath;
+                    this.metadataService.updateAlbumCoverPath(albumId, candidateCoverPath);
+                }
+            }
         }
 
-        const artistId = this.resolveArtistId(track);
         if (artistId) {
+            let artistRecord = null;
             try {
                 const artistPayload = await apiService.getArtistMetadata(artistId);
-                const artistRecord = this.metadataService.upsertArtistMetadata(artistId, artistPayload);
-                const picturePath = await this.imageService.ensureArtistPicture({
-                    artistId,
-                    pictureUrl: artistRecord?.pictureUrl,
-                });
-                if (picturePath) {
-                    this.metadataService.updateArtistPicturePath(artistId, picturePath);
-                }
+                artistRecord = this.metadataService.upsertArtistMetadata(artistId, artistPayload);
             } catch (error) {
                 logger.warn(`Failed to persist artist metadata for ${artistId}: ${error.message}`);
             }
+
+            const resolvedArtistName = artistRecord?.name || artistName;
+            const pictureId = artistRecord?.pictureId || null;
+            const pictureUrl = artistRecord?.pictureUrl || null;
+            const artistAssets = await this.imageService.ensureArtistImages({
+                artistId,
+                artistName: resolvedArtistName,
+                pictureId,
+                pictureUrl,
+                albumDir,
+            });
+
+            if (artistAssets.length > 0) {
+                const artistDir = artistAssets[0].artistDir;
+                artistAssets.forEach((asset) => {
+                    this.metadataService.upsertImageAsset({
+                        ownerType: 'artist',
+                        ownerId: artistId,
+                        kind: 'picture',
+                        size: asset.size,
+                        url: asset.url,
+                        filePath: asset.filePath,
+                    });
+                });
+
+                const candidatePicturePath = this.imageService.buildArtistImagePath(artistDir, null);
+                if (candidatePicturePath && (await this.fileExists(candidatePicturePath))) {
+                    this.metadataService.updateArtistPicturePath(artistId, candidatePicturePath);
+                }
+            }
         }
+
+        return coverPath;
     }
 
-    async refreshMetadata(apiInstances, trackId, trackMeta, albumId) {
+    async refreshMetadata(apiInstances, trackId, trackMeta, albumId, trackPath) {
         if (this.activeMetadataRefresh.has(trackId)) return;
         this.activeMetadataRefresh.add(trackId);
 
@@ -164,9 +253,10 @@ export class DownloadService {
             const metadata = this.metadataService.upsertTrackMetadata(trackId, track || {});
 
             const resolvedAlbumId = albumId || this.resolveAlbumId(track, metadata);
-            const fallbackCoverPath = resolvedAlbumId ? this.cacheService.getAlbumCoverPath(resolvedAlbumId) : null;
+            const fallbackPath =
+                trackPath || (resolvedAlbumId ? this.cacheService.getAlbumCoverPath(resolvedAlbumId) : null);
 
-            await this.enrichMetadata(apiService, track, metadata, fallbackCoverPath);
+            await this.enrichMetadata(apiService, track, metadata, fallbackPath);
         } catch (error) {
             logger.warn(`Failed to refresh metadata for ${trackId}: ${error.message}`);
         } finally {
@@ -301,39 +391,6 @@ export class DownloadService {
         }
 
         return candidate;
-    }
-
-    async ensureCover(metadata, targetDir) {
-        const coverUrl = metadata?.coverUrl;
-        if (!coverUrl || !targetDir) return null;
-
-        const targetPath = path.join(targetDir, 'cover.jpg');
-
-        if (await this.fileExists(targetPath)) {
-            return targetPath;
-        }
-
-        const existingCover = metadata.albumId ? this.cacheService.getAlbumCoverPath(metadata.albumId) : null;
-        if (existingCover && (await this.fileExists(existingCover))) {
-            await fs.mkdir(targetDir, { recursive: true });
-            await fs.copyFile(existingCover, targetPath);
-            return targetPath;
-        }
-
-        try {
-            const response = await fetch(coverUrl);
-            if (!response.ok) {
-                logger.warn(`Failed to download cover art: HTTP ${response.status}`);
-                return null;
-            }
-            const buffer = await response.arrayBuffer();
-            await fs.mkdir(targetDir, { recursive: true });
-            await fs.writeFile(targetPath, Buffer.from(buffer));
-            return targetPath;
-        } catch (error) {
-            logger.warn(`Failed to download cover art: ${error.message}`);
-            return null;
-        }
     }
 
     normalizeRelativePath(relativePath, extension, trackId) {
