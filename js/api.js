@@ -404,8 +404,14 @@ export class LosslessAPI {
         const cached = await this.cache.get('album', id);
         if (cached) return cached;
 
-        const response = await this.fetchWithRetry(`/album/?id=${id}`);
-        const jsonData = await response.json();
+        let jsonData;
+        const backendAlbum = await this.getBackendMetadata('album', id);
+        if (backendAlbum) {
+            jsonData = backendAlbum;
+        } else {
+            const response = await this.fetchWithRetry(`/album/?id=${id}`);
+            jsonData = await response.json();
+        }
 
         // Unwrap the data property if it exists
         const data = jsonData.data || jsonData;
@@ -678,12 +684,22 @@ export class LosslessAPI {
         const cached = await this.cache.get('artist', cacheKey);
         if (cached) return cached;
 
-        const [primaryResponse, contentResponse] = await Promise.all([
-            this.fetchWithRetry(`/artist/?id=${artistId}`),
-            this.fetchWithRetry(`/artist/?f=${artistId}&skip_tracks=true`),
-        ]);
+        let primaryJsonData;
+        let contentJsonData;
+        const backendArtist = await this.getBackendMetadata('artist', artistId);
 
-        const primaryJsonData = await primaryResponse.json();
+        if (backendArtist) {
+            primaryJsonData = backendArtist.primary || backendArtist;
+            contentJsonData = backendArtist.content || {};
+        } else {
+            const [primaryResponse, contentResponse] = await Promise.all([
+                this.fetchWithRetry(`/artist/?id=${artistId}`),
+                this.fetchWithRetry(`/artist/?f=${artistId}&skip_tracks=true`),
+            ]);
+
+            primaryJsonData = await primaryResponse.json();
+            contentJsonData = await contentResponse.json();
+        }
 
         // Unwrap data property if it exists, then unwrap artist property if it exists
         let primaryData = primaryJsonData.data || primaryJsonData;
@@ -697,9 +713,8 @@ export class LosslessAPI {
             name: rawArtist.name || 'Unknown Artist',
         };
 
-        const contentJsonData = await contentResponse.json();
         // Unwrap data property if it exists
-        const contentData = contentJsonData.data || contentJsonData;
+        const contentData = contentJsonData?.data || contentJsonData;
         const entries = Array.isArray(contentData) ? contentData : [contentData];
 
         const albumMap = new Map();
@@ -921,8 +936,14 @@ export class LosslessAPI {
         const cached = await this.cache.get('track', cacheKey);
         if (cached) return cached;
 
-        const response = await this.fetchWithRetry(`/info/?id=${id}`, { type: 'api' });
-        const json = await response.json();
+        let json;
+        const backendTrack = await this.getBackendMetadata('track', id);
+        if (backendTrack) {
+            json = backendTrack;
+        } else {
+            const response = await this.fetchWithRetry(`/info/?id=${id}`, { type: 'api' });
+            json = await response.json();
+        }
         const data = json.data || json;
 
         let track;
@@ -949,6 +970,24 @@ export class LosslessAPI {
 
         await this.cache.set('track', cacheKey, result);
         return result;
+    }
+
+    async getBackendMetadata(type, id) {
+        if (!window.BACKEND_URL) return null;
+        const encodedType = encodeURIComponent(type);
+        const encodedId = encodeURIComponent(id);
+        const url = `${window.BACKEND_URL}/api/metadata/${encodedType}/${encodedId}`;
+
+        try {
+            const response = await fetch(url, {
+                signal: AbortSignal.timeout(1500),
+                cache: 'no-store',
+            });
+            if (!response.ok) return null;
+            return response.json();
+        } catch {
+            return null;
+        }
     }
 
     async getBackendStreamUrl(id, quality = 'HI_RES_LOSSLESS') {
@@ -1143,6 +1182,10 @@ export class LosslessAPI {
             return `https://picsum.photos/seed/${Math.random()}/${size}`;
         }
 
+        if (typeof id === 'string' && id.startsWith('/api/images/')) {
+            return window.BACKEND_URL ? `${window.BACKEND_URL}${id}` : id;
+        }
+
         if (typeof id === 'string' && (id.startsWith('http') || id.startsWith('blob:') || id.startsWith('assets/'))) {
             return id;
         }
@@ -1156,7 +1199,11 @@ export class LosslessAPI {
             return `https://picsum.photos/seed/${Math.random()}/${size}`;
         }
 
-        if (typeof id === 'string' && (id.startsWith('blob:') || id.startsWith('assets/'))) {
+        if (typeof id === 'string' && id.startsWith('/api/images/')) {
+            return window.BACKEND_URL ? `${window.BACKEND_URL}${id}` : id;
+        }
+
+        if (typeof id === 'string' && (id.startsWith('http') || id.startsWith('blob:') || id.startsWith('assets/'))) {
             return id;
         }
 
