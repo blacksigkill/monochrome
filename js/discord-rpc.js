@@ -1,4 +1,5 @@
 import { getTrackTitle, getTrackArtists } from './utils.js';
+import * as Neutralino from './neutralino-bridge.js';
 
 export function initializeDiscordRPC(player) {
     const EXTENSION_ID = 'js.neutralino.discordrpc';
@@ -50,8 +51,8 @@ export function initializeDiscordRPC(player) {
                 smallImageKey: 'pause',
                 smallImageText: 'Paused',
             };
-            Neutralino.events.broadcast('discord:update', idlingData).catch(() => {});
-            Neutralino.extensions.dispatch(EXTENSION_ID, 'discord:update', idlingData).catch(() => {});
+            Neutralino.events.broadcast('discord:update', idlingData).catch(() => { });
+            Neutralino.extensions.dispatch(EXTENSION_ID, 'discord:update', idlingData).catch(() => { });
         }
     }, 5000);
 
@@ -82,6 +83,6 @@ export function initializeDiscordRPC(player) {
                 smallImageKey: 'pause',
                 smallImageText: 'Paused',
             })
-            .catch(() => {});
+            .catch(() => { });
     }
 }

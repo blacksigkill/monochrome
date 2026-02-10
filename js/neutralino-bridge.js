@@ -77,3 +77,4 @@ export default {
     app,
     window: _window,
 };
+

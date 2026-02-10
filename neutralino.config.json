@@ -11,7 +11,7 @@
     "enableServer": true,
     "enableNativeAPI": true,
     "enableExtensions": true,
-    "tokenSecurity": "one-time",
+    "tokenSecurity": "none",
     "modes": {
         "window": {
             "title": "Monochrome",
@@ -26,7 +26,8 @@
             "borderless": false,
             "enableInspector": true,
             "openInspectorOnStartup": false,
-            "exitProcessOnClose": true
+            "exitProcessOnClose": true,
+            "userAgent": "Neutralino"
         }
     },
     "port": 5050,
@@ -44,5 +45,10 @@
             "commandWindows": "powershell.exe -ExecutionPolicy Bypass -File \"${NL_PATH}/extensions/js.neutralino.discordrpc/bridge.ps1\""
         }
     ],
-    "nativeAllowList": ["app.exit", "window.*", "extensions.*", "events.*"]
+    "nativeAllowList": [
+        "app.exit",
+        "window.*",
+        "extensions.*",
+        "events.*"
+    ]
 }

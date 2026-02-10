@@ -21,12 +21,14 @@ import { db } from './db.js';
 import { syncManager } from './accounts/pocketbase.js';
 import { registerSW } from 'virtual:pwa-register';
 import { initializeDiscordRPC } from './discord-rpc.js';
-import * as Neutralino from '@neutralinojs/lib';
+import * as Neutralino from './neutralino-bridge.js';
 import './smooth-scrolling.js';
 
 // Assign Neutralino to window for global access
-if (typeof window !== 'undefined' && window.NL_MODE) {
+// Force global assignment for Bridge mode
+if (typeof window !== 'undefined') {
     window.Neutralino = Neutralino;
+    window.NL_MODE = 'neutralino'; // Force mode so other checks pass
 }
 
 import { initTracker } from './tracker.js';
@@ -260,20 +262,26 @@ document.addEventListener('DOMContentLoaded', async () => {
                 Neutralino.init();
                 console.log('[App] Neutralino.init() called successfully.');
 
-                // Register events immediately
-                Neutralino.events.on('windowClose', () => {
-                    console.log('[App] Window close event triggered.');
-                    Neutralino.app.exit();
-                });
-            } catch (error) {
-                console.error('[App] Failed to initialize desktop environment:', error);
-            }
-        } else {
-            console.log('[App] Skipping Neutralino.init() on regular web environment.');
+    const initNeutralino = async () => {
+        try {
+            // Bridge init is instant and doesn't need tokens/ports
+            Neutralino.init();
+            console.log('[App] Neutralino Bridge initialized.');
+
+            Neutralino.events.on('windowClose', () => {
+                Neutralino.app.exit();
+            });
+
+            // Initialize Discord RPC
+            console.log('[App] Starting Discord RPC...');
+            initializeDiscordRPC(player);
+
+        } catch (e) {
+            console.error('[App] Neutralino init failed:', e);
         }
-    } else {
-        console.log('[App] Neutralino object NOT detected.');
-    }
+    };
+
+
 
     const api = new LosslessAPI(apiSettings);
 
@@ -2050,3 +2058,4 @@ function showKeyboardShortcuts() {
     modal.addEventListener('click', handleClose);
     modal.classList.add('active');
 }
+
