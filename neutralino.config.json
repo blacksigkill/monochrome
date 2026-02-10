@@ -30,7 +30,6 @@
             "userAgent": "Neutralino"
         }
     },
-    "port": 5050,
     "cli": {
         "binaryName": "Monochrome",
         "resourcesPath": "dist/",
@@ -52,4 +51,5 @@
         "events.*"
     ]
 }
+
 
