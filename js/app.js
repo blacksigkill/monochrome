@@ -275,13 +275,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Initialize Discord RPC
             console.log('[App] Starting Discord RPC...');
             initializeDiscordRPC(player);
-
         } catch (e) {
             console.error('[App] Neutralino init failed:', e);
         }
     };
-
-
 
     const api = new LosslessAPI(apiSettings);
 
@@ -2058,4 +2055,5 @@ function showKeyboardShortcuts() {
     modal.addEventListener('click', handleClose);
     modal.classList.add('active');
 }
+
 
