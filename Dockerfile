@@ -15,8 +15,8 @@ RUN npm install
 # Copy the rest of the project
 COPY . .
 
-# Build the project
-RUN npm run build
+# Build the web app (no Neutralino)
+RUN npm run build:web
 
 # Expose Vite preview port
 EXPOSE 4173
