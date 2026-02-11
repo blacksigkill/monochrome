@@ -65,7 +65,7 @@ Docker Compose automatically merges `docker-compose.override.yml` into `docker-c
 
 This is useful for forks that need to add custom services or configuration (Traefik labels, extra containers, custom networks) without modifying the base `docker-compose.yml`.
 
-The override file does not exist in the upstream repo, don't search it!
+This repo includes a `docker-compose.override.yml` tailored for Traefik/Portainer. It assumes an external network named `mediacenter-network` and host paths for PocketBase data. If you're running locally without that setup, either create the network or temporarily disable the override (rename the file or run `COMPOSE_FILE=docker-compose.yml docker compose up -d`).
 
 **Example** -- adding Traefik labels to PocketBase in your fork:
 
