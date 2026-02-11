@@ -5,7 +5,9 @@ import { authManager } from './auth.js';
 
 const PUBLIC_COLLECTION = 'public_playlists';
 const DEFAULT_POCKETBASE_URL = 'https://monodb.samidy.com';
-const POCKETBASE_URL = localStorage.getItem('monochrome-pocketbase-url') || DEFAULT_POCKETBASE_URL;
+const envPocketbaseUrl = typeof window !== 'undefined' ? window.__POCKETBASE_URL__ : '';
+const storedPocketbaseUrl = localStorage.getItem('monochrome-pocketbase-url') || '';
+const POCKETBASE_URL = envPocketbaseUrl || storedPocketbaseUrl || DEFAULT_POCKETBASE_URL;
 
 console.log('[PocketBase] Using URL:', POCKETBASE_URL);
 
