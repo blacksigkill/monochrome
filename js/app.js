@@ -272,9 +272,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else {
             console.log('[App] Skipping Neutralino.init() on regular web environment.');
         }
-    } else {
+    } 
+    else
         console.log('[App] Neutralino object NOT detected.');
-    }
 
     const api = new LosslessAPI(apiSettings);
 
