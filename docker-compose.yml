@@ -14,6 +14,7 @@ services:
             FIREBASE_CONFIG: ${FIREBASE_CONFIG:-}
             POCKETBASE_URL: ${POCKETBASE_URL:-}
             SESSION_MAX_AGE: ${SESSION_MAX_AGE:-604800000}
+            PREVIEW_ALLOWED_HOSTS: ${PREVIEW_ALLOWED_HOSTS:-}
         restart: unless-stopped
         networks:
             - monochrome-network

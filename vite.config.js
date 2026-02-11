@@ -1,8 +1,14 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import authGatePlugin from './vite-plugin-auth-gate.js';
 
 export default defineConfig(async ({ mode }) => {
+    const env = loadEnv(mode, process.cwd(), '');
+    const allowedHostsRaw = env.PREVIEW_ALLOWED_HOSTS || env.VITE_PREVIEW_ALLOWED_HOSTS || '';
+    const allowedHosts = allowedHostsRaw
+        .split(',')
+        .map((host) => host.trim())
+        .filter(Boolean);
     const IS_NEUTRALINO = mode === 'neutralino';
     const plugins = [authGatePlugin()];
 
@@ -11,7 +17,7 @@ export default defineConfig(async ({ mode }) => {
         plugins.unshift(neutralino());
     }
 
-    return {
+    const config = {
         base: './',
         build: {
             outDir: 'dist',
@@ -58,4 +64,10 @@ export default defineConfig(async ({ mode }) => {
             }),
         ],
     };
+
+    if (allowedHosts.length > 0) {
+        config.preview = { allowedHosts };
+    }
+
+    return config;
 });
