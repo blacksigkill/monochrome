@@ -2,48 +2,48 @@
 # This file is automatically merged with docker-compose.yml by Docker Compose.
 
 services:
-  pocketbase:
-    container_name: pocketbase
-    environment:
-      PB_ENCRYPTION_KEY: ${PB_ENCRYPTION_KEY:-}
-    command: serve --encryptionEnv=PB_ENCRYPTION_KEY --http=0.0.0.0:8090
-    volumes:
-      - ${HOSTDATAPATH}/pocketbase/pb_data:/pb_data
-      - ${HOSTDOCKERPATH}/pocketbase/pb_public:/pb_public
-      - ${HOSTDOCKERPATH}/pocketbase/pb_hooks:/pb_hooks
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.pocketbase.entrypoints=websecure
-      - traefik.http.routers.pocketbase.service=pocketbase@docker
-      - traefik.http.routers.pocketbase.tls.certresolver=letsencrypt
-      - traefik.http.routers.pocketbase.rule=Host(`${POCKETBASE_SUBDOMAIN:-pocketbase}.${ZONE}`)
-      - traefik.http.services.pocketbase.loadbalancer.server.port=8090
-      # HTTPS redirect
-      - traefik.http.routers.pocketbase-redirect.middlewares=redirect-to-https
-      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
-      # CORS
-      - traefik.http.middlewares.pocketbase-cors.headers.customresponseheaders.Access-Control-Allow-Origin=*
-      - traefik.http.middlewares.pocketbase-cors.headers.customresponseheaders.Access-Control-Allow-Methods=GET,POST,OPTIONS
-      - traefik.http.middlewares.pocketbase-cors.headers.customresponseheaders.Access-Control-Allow-Headers=*
-      - traefik.http.routers.pocketbase.middlewares=pocketbase-cors
-    networks:
-      mediacenter-network:
-        ipv4_address: ${POCKETBASE_IP:-172.1.0.20}
+    pocketbase:
+        container_name: pocketbase
+        environment:
+            PB_ENCRYPTION_KEY: ${PB_ENCRYPTION_KEY:-}
+        command: serve --encryptionEnv=PB_ENCRYPTION_KEY --http=0.0.0.0:8090
+        volumes:
+            - ${HOSTDATAPATH}/pocketbase/pb_data:/pb_data
+            - ${HOSTDOCKERPATH}/pocketbase/pb_public:/pb_public
+            - ${HOSTDOCKERPATH}/pocketbase/pb_hooks:/pb_hooks
+        labels:
+            - traefik.enable=true
+            - traefik.http.routers.pocketbase.entrypoints=websecure
+            - traefik.http.routers.pocketbase.service=pocketbase@docker
+            - traefik.http.routers.pocketbase.tls.certresolver=letsencrypt
+            - traefik.http.routers.pocketbase.rule=Host(`${POCKETBASE_SUBDOMAIN:-pocketbase}.${ZONE}`)
+            - traefik.http.services.pocketbase.loadbalancer.server.port=8090
+            # HTTPS redirect
+            - traefik.http.routers.pocketbase-redirect.middlewares=redirect-to-https
+            - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+            # CORS
+            - traefik.http.middlewares.pocketbase-cors.headers.customresponseheaders.Access-Control-Allow-Origin=*
+            - traefik.http.middlewares.pocketbase-cors.headers.customresponseheaders.Access-Control-Allow-Methods=GET,POST,OPTIONS
+            - traefik.http.middlewares.pocketbase-cors.headers.customresponseheaders.Access-Control-Allow-Headers=*
+            - traefik.http.routers.pocketbase.middlewares=pocketbase-cors
+        networks:
+            mediacenter-network:
+                ipv4_address: ${POCKETBASE_IP:-172.1.0.20}
 
-  monochrome:
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.monochrome.entrypoints=websecure
-      - traefik.http.routers.monochrome.service=monochrome@docker
-      - traefik.http.routers.monochrome.tls.certresolver=letsencrypt
-      - traefik.http.routers.monochrome.rule=Host(`${MONOCHROME_SUBDOMAIN:-monochrome}.${ZONE}`)
-      - traefik.http.services.monochrome.loadbalancer.server.port=4173
-      - traefik.http.routers.monochrome-redirect.middlewares=redirect-to-https
-    networks:
-      mediacenter-network:
-        ipv4_address: ${MONOCHROME_IP:-172.1.0.21}
+    monochrome:
+        labels:
+            - traefik.enable=true
+            - traefik.http.routers.monochrome.entrypoints=websecure
+            - traefik.http.routers.monochrome.service=monochrome@docker
+            - traefik.http.routers.monochrome.tls.certresolver=letsencrypt
+            - traefik.http.routers.monochrome.rule=Host(`${MONOCHROME_SUBDOMAIN:-monochrome}.${ZONE}`)
+            - traefik.http.services.monochrome.loadbalancer.server.port=4173
+            - traefik.http.routers.monochrome-redirect.middlewares=redirect-to-https
+        networks:
+            mediacenter-network:
+                ipv4_address: ${MONOCHROME_IP:-172.1.0.21}
 
 # Change this to match your existing external network (e.g. Traefik)
 networks:
-  mediacenter-network:
-    external: true
+    mediacenter-network:
+        external: true
