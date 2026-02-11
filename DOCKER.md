@@ -65,7 +65,7 @@ Docker Compose automatically merges `docker-compose.override.yml` into `docker-c
 
 This is useful for forks that need to add custom services or configuration (Traefik labels, extra containers, custom networks) without modifying the base `docker-compose.yml`.
 
-This repo includes a `docker-compose.override.yml` tailored for Traefik/Portainer. It assumes an external network named `mediacenter-network` and host paths for PocketBase data. If you're running locally without that setup, either create the network or temporarily disable the override (rename the file or run `COMPOSE_FILE=docker-compose.yml docker compose up -d`).
+This repo includes a `docker-compose.override.yml` tailored for Traefik/Portainer. It assumes an external network named `mediacenter-network` and keeps PocketBase volumes configurable via `PB_DATA_VOLUME`, `PB_PUBLIC_VOLUME`, `PB_HOOKS_VOLUME` (absolute host paths). If those env vars are unset, it falls back to named volumes (`monochrome_pb_data`, `monochrome_pb_public`, `monochrome_pb_hooks`). If you bind host paths, you won't see Docker volumes listed (that's expected). Note: the PocketBase image entrypoint sets `--dir=/pb_data --publicDir=/pb_public --hooksDir=/pb_hooks`; overriding the command with `serve ...` will bypass that and reset data on each restart. If you're running locally without that setup, either create the network or temporarily disable the override (rename the file or run `COMPOSE_FILE=docker-compose.yml docker compose up -d`).
 
 **Example** -- adding Traefik labels to PocketBase in your fork:
 
