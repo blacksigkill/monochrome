@@ -11,6 +11,7 @@ import {
     replayGainSettings,
     smoothScrollingSettings,
     downloadQualitySettings,
+    serverDownloadSettings,
     coverArtSizeSettings,
     qualityBadgeSettings,
     trackDateSettings,
@@ -1855,7 +1856,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
 
     // Font Settings
     initializeFontSettings();
-    
+
     // Server Downloads Settings
     const serverDownloadsToggle = document.getElementById('server-downloads-toggle');
     const serverDownloadsConfig = document.getElementById('server-downloads-config');
@@ -2171,4 +2172,3 @@ function filterSettings(query) {
         group.style.display = hasMatch ? '' : 'none';
     });
 }
-
