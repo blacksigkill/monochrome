@@ -3,8 +3,8 @@ FROM node:lts-alpine
 
 WORKDIR /app
 
-# wget is needed for Docker healthcheck
-RUN apk add --no-cache wget
+# Build tools needed for native npm modules
+RUN apk add --no-cache wget python3 make g++
 
 # Copy package files first for caching
 COPY package.json package-lock.json ./

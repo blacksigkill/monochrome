@@ -4,6 +4,9 @@ FROM node:lts-alpine
 
 WORKDIR /app
 
+# Build tools needed for native npm modules
+RUN apk add --no-cache python3 make g++
+
 # Copy package files first for caching
 COPY package.json ./
 
