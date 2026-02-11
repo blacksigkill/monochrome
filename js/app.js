@@ -256,14 +256,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    if (typeof window !== 'undefined' && window.Neutralino) {
-        if (isDesktop) {
-            console.log('[App] Initializing Neutralino desktop environment...');
-            try {
-                Neutralino.init();
-                console.log('[App] Neutralino.init() called successfully.');
-
-    const initNeutralino = async () => {
+    if (typeof window !== 'undefined' && window.Neutralino && isDesktop) {
+        console.log('[App] Initializing Neutralino desktop environment...');
         try {
             // Bridge init is instant and doesn't need tokens/ports
             Neutralino.init();
@@ -272,14 +266,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             Neutralino.events.on('windowClose', () => {
                 Neutralino.app.exit();
             });
-
-            // Initialize Discord RPC
-            console.log('[App] Starting Discord RPC...');
-            initializeDiscordRPC(player);
         } catch (e) {
             console.error('[App] Neutralino init failed:', e);
         }
-    };
+    }
 
     const api = new LosslessAPI(apiSettings);
 
@@ -2077,6 +2067,3 @@ function showKeyboardShortcuts() {
     modal.addEventListener('click', handleClose);
     modal.classList.add('active');
 }
-
-
-

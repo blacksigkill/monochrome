@@ -1042,6 +1042,9 @@ export class Player {
             await Neutralino.window.setTitle(`${trackTitle} • ${artist}`);
         } catch (e) {
             console.error('Failed to set window title:', e);
+        }
+    }
+
     async triggerServerDownload(trackId, quality) {
         try {
             // Get streaming API instances from user settings
@@ -1071,4 +1074,3 @@ export class Player {
         }
     }
 }
-

@@ -1,10 +1,15 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
-import neutralino from 'vite-plugin-neutralino';
 import authGatePlugin from './vite-plugin-auth-gate.js';
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(async ({ mode }) => {
     const IS_NEUTRALINO = mode === 'neutralino';
+    const plugins = [authGatePlugin()];
+
+    if (IS_NEUTRALINO) {
+        const { default: neutralino } = await import('vite-plugin-neutralino');
+        plugins.unshift(neutralino());
+    }
 
     return {
         base: './',
@@ -13,8 +18,7 @@ export default defineConfig(({ mode }) => {
             emptyOutDir: true,
         },
         plugins: [
-            IS_NEUTRALINO && neutralino(),
-            authGatePlugin(),
+            ...plugins,
             VitePWA({
                 registerType: 'prompt',
                 workbox: {
