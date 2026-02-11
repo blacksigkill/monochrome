@@ -2920,7 +2920,6 @@ function showKeyboardShortcuts() {
     modal.classList.add('active');
 }
 
-<<<<<<< HEAD
 function showCustomizeShortcutsModal() {
     const modal = document.getElementById('customize-shortcuts-modal');
     const shortcutsList = document.getElementById('shortcuts-list');
@@ -3077,5 +3076,3 @@ function showCustomizeShortcutsModal() {
     renderShortcuts();
     modal.classList.add('active');
 }
-=======
->>>>>>> ac5cd6a (Initialize a simple download server for monochrome)
