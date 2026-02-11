@@ -13,6 +13,7 @@ import {
     smoothScrollingSettings,
     downloadQualitySettings,
     losslessContainerSettings,
+    serverDownloadSettings,
     coverArtSizeSettings,
     qualityBadgeSettings,
     trackDateSettings,
