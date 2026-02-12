@@ -2575,6 +2575,10 @@ input[type='search']::-webkit-search-cancel-button {
     color: var(--muted-foreground);
 }
 
+.setting-item .toggle-switch {
+    flex-shrink: 0;
+}
+
 .setting-item select,
 .setting-item input[type='number'] {
     background-color: var(--input);

@@ -3227,6 +3227,12 @@ export class UIRenderer {
             return;
         }
 
+        if (!authManager.ready) {
+            container.innerHTML =
+                '<div style="text-align:center; padding:2rem; color:var(--muted-foreground)">Checking account...</div>';
+            await authManager.whenReady();
+        }
+
         // Check authentication
         if (!authManager.user) {
             container.innerHTML = `
@@ -3386,7 +3392,7 @@ export class UIRenderer {
             return this.api.getCoverUrl(coverId, size);
         };
 
-        const resolveExposedArtistPicture = (pictureId, size = '80') => {
+        const resolveExposedArtistPicture = (pictureId, size = '160') => {
             if (!pictureId) return '';
             if (typeof pictureId === 'string') {
                 if (pictureId.includes('{width}') || pictureId.includes('{height}')) {
@@ -3403,6 +3409,21 @@ export class UIRenderer {
             }
             return this.api.getArtistPictureUrl(pictureId, size);
         };
+
+        await Promise.all(
+            stats.topArtists.map(async (artist) => {
+                if (!artist?.id) return;
+                try {
+                    const artistData = await this.api.getArtist(artist.id);
+                    const nextPicture = artistData?.picture || artistData?.image || null;
+                    if (nextPicture) {
+                        artist.picture = nextPicture;
+                    }
+                } catch {
+                    // ignore artist lookup failures
+                }
+            })
+        );
 
         // Format listening time
         const hours = Math.floor(stats.totalDuration / 3600);
@@ -3501,7 +3522,7 @@ export class UIRenderer {
                             .map(
                                 (a, i) => `<div class="exposed-list-item" data-href="${a.id ? `/artist/${a.id}` : '#'}">
                                 <span class="exposed-rank">${i + 1}</span>
-                                ${a.picture ? `<img class="exposed-cover" src="${resolveExposedArtistPicture(a.picture, '80')}" alt="" loading="lazy"/>` : '<div class="exposed-cover exposed-cover-placeholder"></div>'}
+                                ${a.picture ? `<img class="exposed-cover" src="${resolveExposedArtistPicture(a.picture, '160')}" alt="" loading="lazy"/>` : '<div class="exposed-cover exposed-cover-placeholder"></div>'}
                                 <div class="exposed-item-info">
                                     <div class="exposed-item-title">${escapeHtml(a.name)}</div>
                                 </div>
