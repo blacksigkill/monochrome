@@ -31,6 +31,7 @@ import {
     pwaUpdateSettings,
     contentBlockingSettings,
     musicProviderSettings,
+    exposedSettings,
 } from './storage.js';
 import { audioContextManager, EQ_PRESETS } from './audio-context.js';
 import { getButterchurnPresets } from './visualizers/butterchurn.js';
@@ -129,6 +130,23 @@ export function initializeSettings(scrobbler, player, api, ui) {
                 await authManager.sendPasswordReset(email);
             } catch {
                 /* ignore */
+            }
+        });
+    }
+
+    // Exposed Settings
+    const exposedEnabledToggle = document.getElementById('exposed-enabled-toggle');
+    if (exposedEnabledToggle) {
+        exposedEnabledToggle.checked = exposedSettings.isEnabled();
+        exposedEnabledToggle.addEventListener('change', (e) => {
+            if (e.target.checked && !authManager.user) {
+                e.target.checked = false;
+                alert('Exposed requires a PocketBase account. Please sign in first.');
+                return;
+            }
+            exposedSettings.setEnabled(e.target.checked);
+            if (e.target.checked) {
+                alert('Exposed enabled! Your listening stats will now be tracked and synced across devices.');
             }
         });
     }
@@ -1364,6 +1382,24 @@ export function initializeSettings(scrobbler, player, api, ui) {
         });
     }
 
+    const sidebarShowExposedToggle = document.getElementById('sidebar-show-exposed-toggle');
+    if (sidebarShowExposedToggle) {
+        sidebarShowExposedToggle.checked = sidebarSectionSettings.shouldShowExposed();
+
+        // Initialize disabled state if Exposed feature is not enabled
+        const exposedItem = sidebarShowExposedToggle.closest('.setting-item');
+        if (!exposedSettings.isEnabled() && exposedItem) {
+            sidebarShowExposedToggle.disabled = true;
+            exposedItem.style.opacity = '0.5';
+            exposedItem.style.pointerEvents = 'none';
+        }
+
+        sidebarShowExposedToggle.addEventListener('change', (e) => {
+            sidebarSectionSettings.setShowExposed(e.target.checked);
+            sidebarSectionSettings.applySidebarVisibility();
+        });
+    }
+
     const sidebarShowUnreleasedToggle = document.getElementById('sidebar-show-unreleased-toggle');
     if (sidebarShowUnreleasedToggle) {
         sidebarShowUnreleasedToggle.checked = sidebarSectionSettings.shouldShowUnreleased();
@@ -1427,6 +1463,27 @@ export function initializeSettings(scrobbler, player, api, ui) {
 
     // Apply sidebar visibility on initialization
     sidebarSectionSettings.applySidebarVisibility();
+
+    // Listen for Exposed toggle changes to update sidebar visibility
+    window.addEventListener('exposed-toggle', () => {
+        sidebarSectionSettings.applySidebarVisibility();
+        // Update the checkbox state in Interface settings if it exists
+        const sidebarShowExposedToggle = document.getElementById('sidebar-show-exposed-toggle');
+        if (sidebarShowExposedToggle) {
+            const exposedItem = sidebarShowExposedToggle.closest('.setting-item');
+            if (exposedItem) {
+                // Disable/enable the toggle based on Exposed feature status
+                sidebarShowExposedToggle.disabled = !exposedSettings.isEnabled();
+                if (!exposedSettings.isEnabled()) {
+                    exposedItem.style.opacity = '0.5';
+                    exposedItem.style.pointerEvents = 'none';
+                } else {
+                    exposedItem.style.opacity = '';
+                    exposedItem.style.pointerEvents = '';
+                }
+            }
+        }
+    });
 
     const sidebarSettingsGroup = sidebarShowHomeToggle?.closest('.settings-group');
     if (sidebarSettingsGroup) {

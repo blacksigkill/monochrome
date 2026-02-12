@@ -1,7 +1,7 @@
 export class MusicDatabase {
     constructor() {
         this.dbName = 'MonochromeDB';
-        this.version = 7;
+        this.version = 8;
         this.db = null;
     }
 
@@ -59,6 +59,10 @@ export class MusicDatabase {
                 }
                 if (!db.objectStoreNames.contains('settings')) {
                     db.createObjectStore('settings');
+                }
+                if (!db.objectStoreNames.contains('exposed_listens')) {
+                    const store = db.createObjectStore('exposed_listens', { autoIncrement: true });
+                    store.createIndex('timestamp', 'timestamp', { unique: false });
                 }
             };
         });
@@ -306,6 +310,53 @@ export class MusicDatabase {
         return item;
     }
 
+    // Exposed Listens API
+    async addExposedListen(data) {
+        const db = await this.open();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction('exposed_listens', 'readwrite');
+            const store = transaction.objectStore('exposed_listens');
+            store.add(data);
+            transaction.oncomplete = () => resolve(data);
+            transaction.onerror = (e) => reject(e.target.error);
+        });
+    }
+
+    async getExposedListens(startTime, endTime) {
+        const db = await this.open();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction('exposed_listens', 'readonly');
+            const store = transaction.objectStore('exposed_listens');
+            const index = store.index('timestamp');
+            const range = IDBKeyRange.bound(startTime, endTime);
+            const request = index.getAll(range);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async getAllExposedListens() {
+        const db = await this.open();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction('exposed_listens', 'readonly');
+            const store = transaction.objectStore('exposed_listens');
+            const request = store.getAll();
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async clearExposedListens() {
+        const db = await this.open();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction('exposed_listens', 'readwrite');
+            const store = transaction.objectStore('exposed_listens');
+            const request = store.clear();
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    }
+
     async exportData() {
         const tracks = await this.getFavorites('track');
         const albums = await this.getFavorites('album');
@@ -316,6 +367,7 @@ export class MusicDatabase {
 
         const userPlaylists = await this.getPlaylists(true);
         const userFolders = await this.getFolders();
+        const exposedListens = await this.getAllExposedListens();
         const data = {
             favorites_tracks: tracks.map((t) => this._minifyItem('track', t)),
             favorites_albums: albums.map((a) => this._minifyItem('album', a)),
@@ -325,6 +377,7 @@ export class MusicDatabase {
             history_tracks: history.map((t) => this._minifyItem('track', t)),
             user_playlists: userPlaylists,
             user_folders: userFolders,
+            exposed_listens: exposedListens,
         };
         return data;
     }
@@ -418,6 +471,7 @@ export class MusicDatabase {
             history: data.history_tracks?.length || 0,
             userPlaylists: data.user_playlists?.length || 0,
             user_folders: data.user_folders?.length || 0,
+            exposed_listens: data.exposed_listens?.length || 0,
         });
 
         const results = await Promise.all([
@@ -429,6 +483,7 @@ export class MusicDatabase {
             importStore('history_tracks', data.history_tracks),
             data.user_playlists ? importStore('user_playlists', data.user_playlists) : Promise.resolve(false),
             data.user_folders ? importStore('user_folders', data.user_folders) : Promise.resolve(false),
+            data.exposed_listens ? importStore('exposed_listens', data.exposed_listens) : Promise.resolve(false),
         ]);
 
         console.log('Import results:', results);

@@ -18,6 +18,7 @@ import { db } from './db.js';
 import { syncManager } from './accounts/pocketbase.js';
 import { waveformGenerator } from './waveform.js';
 import { audioContextManager } from './audio-context.js';
+import { exposedManager } from './exposed.js';
 
 let currentTrackIdForWaveform = null;
 
@@ -32,9 +33,11 @@ export function initializePlayerEvents(player, audioPlayer, scrobbler, ui) {
 
     // History tracking
     let historyLoggedTrackId = null;
+    let exposedCurrentTrackId = null;
 
     audioPlayer.addEventListener('loadstart', () => {
         historyLoggedTrackId = null;
+        exposedManager.onPlaybackStop();
     });
 
     // Sync UI with player state on load
@@ -65,6 +68,14 @@ export function initializePlayerEvents(player, audioPlayer, scrobbler, ui) {
                 scrobbler.updateNowPlaying(player.currentTrack);
             }
 
+            // Exposed listen tracking
+            if (player.currentTrack.id !== exposedCurrentTrackId) {
+                exposedCurrentTrackId = player.currentTrack.id;
+                exposedManager.onTrackChange(player.currentTrack, audioPlayer);
+            } else {
+                exposedManager.onResume(player.currentTrack, audioPlayer);
+            }
+
             // Resume AudioContext for waveform on mobile (iOS)
             if (waveformGenerator.audioContext.state === 'suspended') {
                 waveformGenerator.audioContext.resume();
@@ -88,6 +99,7 @@ export function initializePlayerEvents(player, audioPlayer, scrobbler, ui) {
         playPauseBtn.innerHTML = SVG_PLAY;
         player.updateMediaSessionPlaybackState();
         player.updateMediaSessionPositionState();
+        exposedManager.onPause();
     });
 
     audioPlayer.addEventListener('ended', () => {
