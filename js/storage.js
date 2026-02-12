@@ -1599,6 +1599,7 @@ export const sidebarSectionSettings = {
     SHOW_HOME_KEY: 'sidebar-show-home',
     SHOW_LIBRARY_KEY: 'sidebar-show-library',
     SHOW_RECENT_KEY: 'sidebar-show-recent',
+    SHOW_EXPOSED_KEY: 'sidebar-show-exposed',
     SHOW_UNRELEASED_KEY: 'sidebar-show-unreleased',
     SHOW_DONATE_KEY: 'sidebar-show-donate',
     SHOW_SETTINGS_KEY: 'sidebar-show-settings',
@@ -1611,6 +1612,7 @@ export const sidebarSectionSettings = {
         'sidebar-nav-home',
         'sidebar-nav-library',
         'sidebar-nav-recent',
+        'sidebar-nav-exposed',
         'sidebar-nav-unreleased',
         'sidebar-nav-donate',
         'sidebar-nav-settings',
@@ -1663,6 +1665,23 @@ export const sidebarSectionSettings = {
 
     setShowRecent(enabled) {
         localStorage.setItem(this.SHOW_RECENT_KEY, enabled ? 'true' : 'false');
+    },
+
+    shouldShowExposed() {
+        // Only show if Exposed feature is enabled globally
+        if (!exposedSettings.isEnabled()) {
+            return false;
+        }
+        try {
+            const val = localStorage.getItem(this.SHOW_EXPOSED_KEY);
+            return val === null ? true : val === 'true';
+        } catch {
+            return true;
+        }
+    },
+
+    setShowExposed(enabled) {
+        localStorage.setItem(this.SHOW_EXPOSED_KEY, enabled ? 'true' : 'false');
     },
 
     shouldShowUnreleased() {
@@ -1809,6 +1828,7 @@ export const sidebarSectionSettings = {
             { id: 'sidebar-nav-home', check: this.shouldShowHome() },
             { id: 'sidebar-nav-library', check: this.shouldShowLibrary() },
             { id: 'sidebar-nav-recent', check: this.shouldShowRecent() },
+            { id: 'sidebar-nav-exposed', check: this.shouldShowExposed() },
             { id: 'sidebar-nav-unreleased', check: this.shouldShowUnreleased() },
             { id: 'sidebar-nav-donate', check: this.shouldShowDonate() },
             { id: 'sidebar-nav-settings', check: this.shouldShowSettings() },
@@ -2476,5 +2496,22 @@ export const contentBlockingSettings = {
         localStorage.removeItem(this.BLOCKED_ARTISTS_KEY);
         localStorage.removeItem(this.BLOCKED_TRACKS_KEY);
         localStorage.removeItem(this.BLOCKED_ALBUMS_KEY);
+    },
+};
+
+export const exposedSettings = {
+    ENABLED_KEY: 'exposed-enabled',
+
+    isEnabled() {
+        try {
+            return localStorage.getItem(this.ENABLED_KEY) === 'true';
+        } catch {
+            return false;
+        }
+    },
+
+    setEnabled(enabled) {
+        localStorage.setItem(this.ENABLED_KEY, enabled ? 'true' : 'false');
+        window.dispatchEvent(new CustomEvent('exposed-toggle', { detail: { enabled } }));
     },
 };

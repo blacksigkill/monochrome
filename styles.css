@@ -7212,3 +7212,234 @@ textarea:focus {
 #custom-tooltip.visible {
     opacity: 1;
 }
+
+/* Exposed Page */
+.exposed-month-timeline {
+    display: flex;
+    gap: var(--spacing-xs);
+    margin-bottom: var(--spacing-lg);
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: var(--spacing-xs);
+}
+
+.exposed-month-timeline::-webkit-scrollbar {
+    display: none;
+}
+
+.exposed-month-chip {
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--muted-foreground);
+    padding: 0.4rem 1rem;
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: var(--transition-fast);
+}
+
+.exposed-month-chip:hover {
+    color: var(--foreground);
+    border-color: var(--foreground);
+}
+
+.exposed-month-chip.active {
+    background: var(--foreground);
+    color: var(--background);
+    border-color: var(--foreground);
+}
+
+.exposed-month-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: var(--spacing-lg);
+}
+
+.exposed-hero-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-xl);
+}
+
+.exposed-hero-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--spacing-lg);
+    text-align: center;
+}
+
+.exposed-hero-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--foreground);
+    line-height: 1.2;
+    margin-bottom: 0.25rem;
+}
+
+.exposed-hero-label {
+    font-size: 0.8rem;
+    color: var(--muted-foreground);
+    font-weight: 500;
+}
+
+.exposed-section {
+    margin-bottom: var(--spacing-xl);
+}
+
+.exposed-section-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: var(--spacing-md);
+}
+
+.exposed-activity-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 120px;
+    padding: var(--spacing-sm) 0;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--spacing-md);
+}
+
+.exposed-activity-bar-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100%;
+    justify-content: flex-end;
+    min-width: 0;
+}
+
+.exposed-activity-bar {
+    width: 100%;
+    max-width: 20px;
+    background: var(--highlight, var(--foreground));
+    border-radius: 2px 2px 0 0;
+    transition: height var(--transition-normal);
+    opacity: 0.8;
+}
+
+.exposed-activity-bar-wrapper:hover .exposed-activity-bar {
+    opacity: 1;
+}
+
+.exposed-activity-day {
+    font-size: 0.6rem;
+    color: var(--muted-foreground);
+    margin-top: 4px;
+}
+
+.exposed-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.exposed-list-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: var(--radius-sm);
+    transition: background var(--transition-fast);
+}
+
+.exposed-list-item:hover {
+    background: var(--accent);
+}
+
+.exposed-rank {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--muted-foreground);
+    min-width: 1.75rem;
+    text-align: center;
+}
+
+.exposed-cover {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-sm);
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.exposed-cover-placeholder {
+    background: var(--accent);
+}
+
+.exposed-item-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.exposed-item-title {
+    font-size: 0.9rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.exposed-item-subtitle {
+    font-size: 0.8rem;
+    color: var(--muted-foreground);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.exposed-play-count {
+    font-size: 0.8rem;
+    color: var(--muted-foreground);
+    font-weight: 500;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+    .exposed-hero-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .exposed-hero-value {
+        font-size: 1.4rem;
+    }
+
+    .exposed-activity-day {
+        display: none;
+    }
+
+    .exposed-activity-chart {
+        height: 80px;
+    }
+}
+
+@media (max-width: 480px) {
+    .exposed-hero-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: var(--spacing-sm);
+    }
+
+    .exposed-hero-card {
+        padding: var(--spacing-md);
+    }
+
+    .exposed-hero-value {
+        font-size: 1.2rem;
+    }
+
+    .exposed-cover {
+        width: 36px;
+        height: 36px;
+    }
+}

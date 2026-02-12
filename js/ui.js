@@ -30,12 +30,15 @@ import {
     homePageSettings,
     fontSettings,
     contentBlockingSettings,
+    exposedSettings,
 } from './storage.js';
 import { db } from './db.js';
 import { getVibrantColorFromImage } from './vibrant-color.js';
 import { syncManager } from './accounts/pocketbase.js';
 import { Visualizer } from './visualizer.js';
 import { navigate } from './router.js';
+import { exposedManager } from './exposed.js';
+import { authManager } from './accounts/auth.js';
 import {
     renderUnreleasedPage as renderUnreleasedTrackerPage,
     renderTrackerArtistPage as renderTrackerArtistContent,
@@ -3193,6 +3196,302 @@ export class UIRenderer {
             container.innerHTML = createPlaceholder('Failed to load history.');
             if (clearBtn) clearBtn.style.display = 'none';
         }
+    }
+
+    async renderExposedPage() {
+        this.showPage('exposed');
+        const container = document.getElementById('exposed-content');
+        const timeline = document.getElementById('exposed-month-timeline');
+        const yearSelect = document.getElementById('exposed-year-select');
+        const syncBtn = document.getElementById('exposed-sync-btn');
+
+        // Check if Exposed is enabled
+        if (!exposedSettings.isEnabled()) {
+            container.innerHTML = `
+                <div style="text-align:center; padding:3rem 2rem;">
+                    <h3 style="margin-bottom:1rem; font-size:1.3rem;">Exposed is Disabled</h3>
+                    <p style="color:var(--muted-foreground); margin-bottom:1.5rem;">
+                        Exposed requires a PocketBase account to sync your listening data across devices.
+                    </p>
+                    <p style="color:var(--muted-foreground); margin-bottom:1.5rem;">
+                        ${!authManager.user ? 'Please sign in to your account first, then enable Exposed in Settings.' : 'Enable Exposed in Settings to start tracking your listening stats.'}
+                    </p>
+                    <button class="btn-primary" onclick="window.location.href = '/${!authManager.user ? 'account' : 'settings'}'">
+                        Go to ${!authManager.user ? 'Account' : 'Settings'}
+                    </button>
+                </div>
+            `;
+            timeline.innerHTML = '';
+            yearSelect.style.display = 'none';
+            if (syncBtn) syncBtn.style.display = 'none';
+            return;
+        }
+
+        // Check authentication
+        if (!authManager.user) {
+            container.innerHTML = `
+                <div style="text-align:center; padding:3rem 2rem;">
+                    <h3 style="margin-bottom:1rem; font-size:1.3rem;">Sign In Required</h3>
+                    <p style="color:var(--muted-foreground); margin-bottom:1.5rem;">
+                        Exposed requires authentication to sync your listening data across devices.
+                    </p>
+                    <button class="btn-primary" onclick="window.location.href = '/account'">
+                        Sign In
+                    </button>
+                </div>
+            `;
+            timeline.innerHTML = '';
+            yearSelect.style.display = 'none';
+            if (syncBtn) syncBtn.style.display = 'none';
+            return;
+        }
+
+        container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--muted-foreground)">Loading stats...</div>';
+        timeline.innerHTML = '';
+        yearSelect.innerHTML = '';
+
+        try {
+            const availableMonths = await exposedManager.getAvailableMonths();
+
+            if (availableMonths.length === 0) {
+                container.innerHTML = createPlaceholder('No listening data yet. Play some tracks to start building your stats!');
+                timeline.innerHTML = '';
+                yearSelect.style.display = 'none';
+                if (syncBtn) syncBtn.style.display = 'none';
+                return;
+            }
+
+            yearSelect.style.display = '';
+            if (syncBtn) syncBtn.style.display = '';
+
+            const years = [...new Set(availableMonths.map((m) => m.split('-')[0]))].sort().reverse();
+            yearSelect.innerHTML = years.map((y) => `<option value="${y}">${y}</option>`).join('');
+
+            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+            const renderYear = (year) => {
+                const yearMonths = availableMonths.filter((m) => m.startsWith(year)).map((m) => parseInt(m.split('-')[1]));
+                timeline.innerHTML = yearMonths
+                    .map(
+                        (m) =>
+                            `<button class="exposed-month-chip" data-month="${m}" data-year="${year}">${monthNames[m - 1]}</button>`
+                    )
+                    .join('');
+
+                // Auto-select last available month
+                const lastMonth = yearMonths[yearMonths.length - 1];
+                const lastChip = timeline.querySelector(`[data-month="${lastMonth}"]`);
+                if (lastChip) {
+                    lastChip.classList.add('active');
+                    this._renderExposedMonth(parseInt(year), lastMonth, container);
+                }
+            };
+
+            yearSelect.addEventListener('change', () => renderYear(yearSelect.value));
+
+            timeline.addEventListener('click', (e) => {
+                const chip = e.target.closest('.exposed-month-chip');
+                if (!chip) return;
+                timeline.querySelectorAll('.exposed-month-chip').forEach((c) => c.classList.remove('active'));
+                chip.classList.add('active');
+                this._renderExposedMonth(parseInt(chip.dataset.year), parseInt(chip.dataset.month), container);
+            });
+
+            if (syncBtn) {
+                syncBtn.onclick = async () => {
+                    if (!authManager.user) {
+                        showNotification('Please sign in to sync your data');
+                        return;
+                    }
+                    syncBtn.disabled = true;
+                    const span = syncBtn.querySelector('span');
+                    const originalText = span.textContent;
+                    span.textContent = 'Syncing...';
+                    try {
+                        const result = await exposedManager.syncAllListens();
+                        span.textContent = 'Synced!';
+                        if (result.addedFromCloud > 0) {
+                            showNotification(`Synced! Added ${result.addedFromCloud} listens from cloud`);
+                            // Refresh current month view
+                            const activeChip = timeline.querySelector('.exposed-month-chip.active');
+                            if (activeChip) {
+                                this._renderExposedMonth(parseInt(activeChip.dataset.year), parseInt(activeChip.dataset.month), container);
+                            }
+                        } else {
+                            showNotification('All data synced!');
+                        }
+                        setTimeout(() => {
+                            span.textContent = originalText;
+                        }, 2000);
+                    } catch (e) {
+                        console.error('Sync failed:', e);
+                        span.textContent = 'Failed';
+                        showNotification(e.message || 'Sync failed');
+                        setTimeout(() => {
+                            span.textContent = originalText;
+                        }, 2000);
+                    } finally {
+                        syncBtn.disabled = false;
+                    }
+                };
+            }
+
+            renderYear(years[0]);
+        } catch (error) {
+            console.error('Failed to load Exposed page:', error);
+            container.innerHTML = createPlaceholder('Failed to load listening stats.');
+        }
+    }
+
+    async _renderExposedMonth(year, month, container) {
+        container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--muted-foreground)">Computing stats...</div>';
+
+        const stats = await exposedManager.computeMonthlyStats(year, month);
+        if (!stats) {
+            container.innerHTML = createPlaceholder('No listening data for this month.');
+            return;
+        }
+
+        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        const monthName = monthNames[month - 1];
+
+        // Format listening time
+        const hours = Math.floor(stats.totalDuration / 3600);
+        const mins = Math.floor((stats.totalDuration % 3600) / 60);
+        const timeStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+
+        // Peak day suffix
+        const peakDaySuffix = (d) => {
+            if (d > 3 && d < 21) return 'th';
+            switch (d % 10) {
+                case 1: return 'st';
+                case 2: return 'nd';
+                case 3: return 'rd';
+                default: return 'th';
+            }
+        };
+
+        // Hero stats
+        let html = `
+            <h3 class="exposed-month-title">${monthName} ${year}</h3>
+            <div class="exposed-hero-grid">
+                <div class="exposed-hero-card">
+                    <div class="exposed-hero-value">${stats.totalListens.toLocaleString()}</div>
+                    <div class="exposed-hero-label">Listens</div>
+                </div>
+                <div class="exposed-hero-card">
+                    <div class="exposed-hero-value">${timeStr}</div>
+                    <div class="exposed-hero-label">Time Listened</div>
+                </div>
+                <div class="exposed-hero-card">
+                    <div class="exposed-hero-value">${stats.uniqueArtists}</div>
+                    <div class="exposed-hero-label">Unique Artists</div>
+                </div>
+                <div class="exposed-hero-card">
+                    <div class="exposed-hero-value">${monthName.slice(0, 3)} ${stats.peakDay}${peakDaySuffix(stats.peakDay)}</div>
+                    <div class="exposed-hero-label">Peak Day (${stats.peakDayCount} plays)</div>
+                </div>
+            </div>
+        `;
+
+        // Daily activity chart
+        const maxCount = Math.max(...stats.dailyActivity.map((d) => d.count), 1);
+        html += `
+            <div class="exposed-section">
+                <h4 class="exposed-section-title">Daily Activity</h4>
+                <div class="exposed-activity-chart">
+                    ${stats.dailyActivity
+                        .map(
+                            (d) => `<div class="exposed-activity-bar-wrapper" title="${monthName.slice(0, 3)} ${d.day}: ${d.count} plays">
+                            <div class="exposed-activity-bar" style="height: ${Math.max((d.count / maxCount) * 100, d.count > 0 ? 4 : 0)}%"></div>
+                            <span class="exposed-activity-day">${d.day}</span>
+                        </div>`
+                        )
+                        .join('')}
+                </div>
+            </div>
+        `;
+
+        // Top Tracks
+        if (stats.topTracks.length > 0) {
+            html += `
+                <div class="exposed-section">
+                    <h4 class="exposed-section-title">Top Tracks</h4>
+                    <div class="exposed-list">
+                        ${stats.topTracks
+                            .map(
+                                (t, i) => `<div class="exposed-list-item" data-href="${t.id ? `/track/${t.id}` : '#'}">
+                                <span class="exposed-rank">${i + 1}</span>
+                                ${t.albumCover ? `<img class="exposed-cover" src="${t.albumCover.replace('{width}', '80').replace('{height}', '80')}" alt="" loading="lazy"/>` : '<div class="exposed-cover exposed-cover-placeholder"></div>'}
+                                <div class="exposed-item-info">
+                                    <div class="exposed-item-title">${escapeHtml(t.title)}</div>
+                                    <div class="exposed-item-subtitle">${escapeHtml(t.artistName)}</div>
+                                </div>
+                                <span class="exposed-play-count">${t.count} plays</span>
+                            </div>`
+                            )
+                            .join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Top Artists
+        if (stats.topArtists.length > 0) {
+            html += `
+                <div class="exposed-section">
+                    <h4 class="exposed-section-title">Top Artists</h4>
+                    <div class="exposed-list">
+                        ${stats.topArtists
+                            .map(
+                                (a, i) => `<div class="exposed-list-item" data-href="${a.id ? `/artist/${a.id}` : '#'}">
+                                <span class="exposed-rank">${i + 1}</span>
+                                <div class="exposed-item-info">
+                                    <div class="exposed-item-title">${escapeHtml(a.name)}</div>
+                                </div>
+                                <span class="exposed-play-count">${a.count} plays</span>
+                            </div>`
+                            )
+                            .join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Top Albums
+        if (stats.topAlbums.length > 0) {
+            html += `
+                <div class="exposed-section">
+                    <h4 class="exposed-section-title">Top Albums</h4>
+                    <div class="exposed-list">
+                        ${stats.topAlbums
+                            .map(
+                                (a, i) => `<div class="exposed-list-item" data-href="${a.id ? `/album/${a.id}` : '#'}">
+                                <span class="exposed-rank">${i + 1}</span>
+                                ${a.cover ? `<img class="exposed-cover" src="${a.cover.replace('{width}', '80').replace('{height}', '80')}" alt="" loading="lazy"/>` : '<div class="exposed-cover exposed-cover-placeholder"></div>'}
+                                <div class="exposed-item-info">
+                                    <div class="exposed-item-title">${escapeHtml(a.title)}</div>
+                                    <div class="exposed-item-subtitle">${escapeHtml(a.artistName)}</div>
+                                </div>
+                                <span class="exposed-play-count">${a.count} plays</span>
+                            </div>`
+                            )
+                            .join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        container.innerHTML = html;
+
+        // Make items clickable
+        container.querySelectorAll('.exposed-list-item[data-href]').forEach((item) => {
+            item.style.cursor = 'pointer';
+            item.addEventListener('click', () => {
+                const href = item.dataset.href;
+                if (href && href !== '#') navigate(href);
+            });
+        });
     }
 
     async renderUnreleasedPage() {
