@@ -1,4 +1,6 @@
 //storage.js
+import { db } from './db.js';
+
 export const apiSettings = {
     STORAGE_KEY: 'monochrome-api-instances-v6',
     INSTANCES_URL: 'instances.json',
@@ -1621,6 +1623,38 @@ export const sidebarSectionSettings = {
         'sidebar-nav-download-bottom',
         'sidebar-nav-discordbtn',
     ],
+    _exposedVisible: true,
+    _exposedVisibilityLoaded: false,
+
+    async initExposedVisibility() {
+        if (this._exposedVisibilityLoaded) return;
+        this._exposedVisibilityLoaded = true;
+
+        let stored = null;
+        try {
+            stored = await db.getSetting(this.SHOW_EXPOSED_KEY);
+        } catch {
+            stored = null;
+        }
+
+        if (stored === null || typeof stored === 'undefined') {
+            try {
+                const legacy = localStorage.getItem(this.SHOW_EXPOSED_KEY);
+                if (legacy !== null) {
+                    this._exposedVisible = legacy === 'true';
+                    await db.saveSetting(this.SHOW_EXPOSED_KEY, this._exposedVisible);
+                    localStorage.removeItem(this.SHOW_EXPOSED_KEY);
+                    return;
+                }
+            } catch {
+                // ignore
+            }
+            this._exposedVisible = true;
+            return;
+        }
+
+        this._exposedVisible = stored === true || stored === 'true';
+    },
 
     getBottomNavIds() {
         const ul = document.querySelector('.sidebar-nav.bottom ul');
@@ -1672,16 +1706,12 @@ export const sidebarSectionSettings = {
         if (!exposedSettings.isEnabled()) {
             return false;
         }
-        try {
-            const val = localStorage.getItem(this.SHOW_EXPOSED_KEY);
-            return val === null ? true : val === 'true';
-        } catch {
-            return true;
-        }
+        return this._exposedVisible;
     },
 
     setShowExposed(enabled) {
-        localStorage.setItem(this.SHOW_EXPOSED_KEY, enabled ? 'true' : 'false');
+        this._exposedVisible = !!enabled;
+        db.saveSetting(this.SHOW_EXPOSED_KEY, this._exposedVisible).catch(() => {});
     },
 
     shouldShowUnreleased() {
@@ -2501,17 +2531,50 @@ export const contentBlockingSettings = {
 
 export const exposedSettings = {
     ENABLED_KEY: 'exposed-enabled',
+    _enabled: false,
+    _initialized: false,
 
-    isEnabled() {
+    async init() {
+        if (this._initialized) return;
+        this._initialized = true;
+
+        let stored = null;
         try {
-            return localStorage.getItem(this.ENABLED_KEY) === 'true';
+            stored = await db.getSetting(this.ENABLED_KEY);
         } catch {
-            return false;
+            stored = null;
         }
+
+        if (stored === null || typeof stored === 'undefined') {
+            try {
+                const legacy = localStorage.getItem(this.ENABLED_KEY);
+                if (legacy !== null) {
+                    this._enabled = legacy === 'true';
+                    await db.saveSetting(this.ENABLED_KEY, this._enabled);
+                    localStorage.removeItem(this.ENABLED_KEY);
+                    return;
+                }
+            } catch {
+                // ignore
+            }
+            this._enabled = false;
+            return;
+        }
+
+        this._enabled = stored === true || stored === 'true';
     },
 
-    setEnabled(enabled) {
-        localStorage.setItem(this.ENABLED_KEY, enabled ? 'true' : 'false');
-        window.dispatchEvent(new CustomEvent('exposed-toggle', { detail: { enabled } }));
+    isEnabled() {
+        return this._enabled;
+    },
+
+    async setEnabled(enabled) {
+        this._enabled = !!enabled;
+        try {
+            await db.saveSetting(this.ENABLED_KEY, this._enabled);
+        } catch {
+            // ignore
+        }
+        window.dispatchEvent(new CustomEvent('exposed-toggle', { detail: { enabled: this._enabled } }));
     },
 };

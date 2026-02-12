@@ -3246,7 +3246,8 @@ export class UIRenderer {
             return;
         }
 
-        container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--muted-foreground)">Loading stats...</div>';
+        container.innerHTML =
+            '<div style="text-align:center; padding:2rem; color:var(--muted-foreground)">Loading stats...</div>';
         timeline.innerHTML = '';
         yearSelect.innerHTML = '';
 
@@ -3254,7 +3255,9 @@ export class UIRenderer {
             const availableMonths = await exposedManager.getAvailableMonths();
 
             if (availableMonths.length === 0) {
-                container.innerHTML = createPlaceholder('No listening data yet. Play some tracks to start building your stats!');
+                container.innerHTML = createPlaceholder(
+                    'No listening data yet. Play some tracks to start building your stats!'
+                );
                 timeline.innerHTML = '';
                 yearSelect.style.display = 'none';
                 if (syncBtn) syncBtn.style.display = 'none';
@@ -3270,7 +3273,9 @@ export class UIRenderer {
             const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
             const renderYear = (year) => {
-                const yearMonths = availableMonths.filter((m) => m.startsWith(year)).map((m) => parseInt(m.split('-')[1]));
+                const yearMonths = availableMonths
+                    .filter((m) => m.startsWith(year))
+                    .map((m) => parseInt(m.split('-')[1]));
                 timeline.innerHTML = yearMonths
                     .map(
                         (m) =>
@@ -3315,7 +3320,11 @@ export class UIRenderer {
                             // Refresh current month view
                             const activeChip = timeline.querySelector('.exposed-month-chip.active');
                             if (activeChip) {
-                                this._renderExposedMonth(parseInt(activeChip.dataset.year), parseInt(activeChip.dataset.month), container);
+                                this._renderExposedMonth(
+                                    parseInt(activeChip.dataset.year),
+                                    parseInt(activeChip.dataset.month),
+                                    container
+                                );
                             }
                         } else {
                             showNotification('All data synced!');
@@ -3344,7 +3353,8 @@ export class UIRenderer {
     }
 
     async _renderExposedMonth(year, month, container) {
-        container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--muted-foreground)">Computing stats...</div>';
+        container.innerHTML =
+            '<div style="text-align:center; padding:2rem; color:var(--muted-foreground)">Computing stats...</div>';
 
         const stats = await exposedManager.computeMonthlyStats(year, month);
         if (!stats) {
@@ -3352,8 +3362,47 @@ export class UIRenderer {
             return;
         }
 
-        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        const monthNames = [
+            'January',
+            'February',
+            'March',
+            'April',
+            'May',
+            'June',
+            'July',
+            'August',
+            'September',
+            'October',
+            'November',
+            'December',
+        ];
         const monthName = monthNames[month - 1];
+
+        const resolveExposedCover = (coverId, size = '80') => {
+            if (!coverId) return '';
+            if (typeof coverId === 'string' && (coverId.includes('{width}') || coverId.includes('{height}'))) {
+                return coverId.replace('{width}', size).replace('{height}', size);
+            }
+            return this.api.getCoverUrl(coverId, size);
+        };
+
+        const resolveExposedArtistPicture = (pictureId, size = '80') => {
+            if (!pictureId) return '';
+            if (typeof pictureId === 'string') {
+                if (pictureId.includes('{width}') || pictureId.includes('{height}')) {
+                    return pictureId.replace('{width}', size).replace('{height}', size);
+                }
+                if (
+                    pictureId.startsWith('http') ||
+                    pictureId.startsWith('data:') ||
+                    pictureId.startsWith('blob:') ||
+                    pictureId.startsWith('assets/')
+                ) {
+                    return pictureId;
+                }
+            }
+            return this.api.getArtistPictureUrl(pictureId, size);
+        };
 
         // Format listening time
         const hours = Math.floor(stats.totalDuration / 3600);
@@ -3364,10 +3413,14 @@ export class UIRenderer {
         const peakDaySuffix = (d) => {
             if (d > 3 && d < 21) return 'th';
             switch (d % 10) {
-                case 1: return 'st';
-                case 2: return 'nd';
-                case 3: return 'rd';
-                default: return 'th';
+                case 1:
+                    return 'st';
+                case 2:
+                    return 'nd';
+                case 3:
+                    return 'rd';
+                default:
+                    return 'th';
             }
         };
 
@@ -3402,7 +3455,9 @@ export class UIRenderer {
                 <div class="exposed-activity-chart">
                     ${stats.dailyActivity
                         .map(
-                            (d) => `<div class="exposed-activity-bar-wrapper" title="${monthName.slice(0, 3)} ${d.day}: ${d.count} plays">
+                            (
+                                d
+                            ) => `<div class="exposed-activity-bar-wrapper" title="${monthName.slice(0, 3)} ${d.day}: ${d.count} plays">
                             <div class="exposed-activity-bar" style="height: ${Math.max((d.count / maxCount) * 100, d.count > 0 ? 4 : 0)}%"></div>
                             <span class="exposed-activity-day">${d.day}</span>
                         </div>`
@@ -3422,7 +3477,7 @@ export class UIRenderer {
                             .map(
                                 (t, i) => `<div class="exposed-list-item" data-href="${t.id ? `/track/${t.id}` : '#'}">
                                 <span class="exposed-rank">${i + 1}</span>
-                                ${t.albumCover ? `<img class="exposed-cover" src="${t.albumCover.replace('{width}', '80').replace('{height}', '80')}" alt="" loading="lazy"/>` : '<div class="exposed-cover exposed-cover-placeholder"></div>'}
+                                ${t.albumCover ? `<img class="exposed-cover" src="${resolveExposedCover(t.albumCover, '80')}" alt="" loading="lazy"/>` : '<div class="exposed-cover exposed-cover-placeholder"></div>'}
                                 <div class="exposed-item-info">
                                     <div class="exposed-item-title">${escapeHtml(t.title)}</div>
                                     <div class="exposed-item-subtitle">${escapeHtml(t.artistName)}</div>
@@ -3446,6 +3501,7 @@ export class UIRenderer {
                             .map(
                                 (a, i) => `<div class="exposed-list-item" data-href="${a.id ? `/artist/${a.id}` : '#'}">
                                 <span class="exposed-rank">${i + 1}</span>
+                                ${a.picture ? `<img class="exposed-cover" src="${resolveExposedArtistPicture(a.picture, '80')}" alt="" loading="lazy"/>` : '<div class="exposed-cover exposed-cover-placeholder"></div>'}
                                 <div class="exposed-item-info">
                                     <div class="exposed-item-title">${escapeHtml(a.name)}</div>
                                 </div>
@@ -3468,7 +3524,7 @@ export class UIRenderer {
                             .map(
                                 (a, i) => `<div class="exposed-list-item" data-href="${a.id ? `/album/${a.id}` : '#'}">
                                 <span class="exposed-rank">${i + 1}</span>
-                                ${a.cover ? `<img class="exposed-cover" src="${a.cover.replace('{width}', '80').replace('{height}', '80')}" alt="" loading="lazy"/>` : '<div class="exposed-cover exposed-cover-placeholder"></div>'}
+                                ${a.cover ? `<img class="exposed-cover" src="${resolveExposedCover(a.cover, '80')}" alt="" loading="lazy"/>` : '<div class="exposed-cover exposed-cover-placeholder"></div>'}
                                 <div class="exposed-item-info">
                                     <div class="exposed-item-title">${escapeHtml(a.title)}</div>
                                     <div class="exposed-item-subtitle">${escapeHtml(a.artistName)}</div>
