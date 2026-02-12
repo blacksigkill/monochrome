@@ -16,15 +16,29 @@ export class AuthManager {
         this.user = null;
         this.unsubscribe = null;
         this.authListeners = [];
+        this.ready = false;
+        this._resolveReady = null;
+        this.readyPromise = new Promise((resolve) => {
+            this._resolveReady = resolve;
+        });
         this.init();
     }
 
     init() {
-        if (!auth) return;
+        if (!auth) {
+            this.ready = true;
+            if (this._resolveReady) this._resolveReady();
+            return;
+        }
 
         this.unsubscribe = onAuthStateChanged(auth, (user) => {
             this.user = user;
             this.updateUI(user);
+
+            if (!this.ready) {
+                this.ready = true;
+                if (this._resolveReady) this._resolveReady();
+            }
 
             this.authListeners.forEach((listener) => listener(user));
         });
@@ -42,6 +56,11 @@ export class AuthManager {
         if (this.user !== null) {
             callback(this.user);
         }
+    }
+
+    whenReady() {
+        if (this.ready) return Promise.resolve(this.user);
+        return this.readyPromise;
     }
 
     async signInWithGoogle() {
