@@ -136,20 +136,43 @@ export function initializeSettings(scrobbler, player, api, ui) {
 
     // Exposed Settings
     const exposedEnabledToggle = document.getElementById('exposed-enabled-toggle');
+    const exposedDescription = document.getElementById('exposed-description');
+
+    const updateExposedDescription = () => {
+        if (!exposedDescription) return;
+        if (!authManager.user) {
+            exposedDescription.textContent =
+                'Track your listening habits like Spotify Wrapped. Sign in to your PocketBase account to enable and sync across devices.';
+            return;
+        }
+        if (exposedSettings.isEnabled()) {
+            exposedDescription.textContent =
+                'Exposed is enabled. Listening stats are tracked and synced across devices.';
+            return;
+        }
+        exposedDescription.textContent =
+            'Track your listening habits like Spotify Wrapped. Enable to start tracking and syncing across devices.';
+    };
+
     if (exposedEnabledToggle) {
         exposedEnabledToggle.checked = exposedSettings.isEnabled();
-        exposedEnabledToggle.addEventListener('change', (e) => {
+        exposedEnabledToggle.addEventListener('change', async (e) => {
             if (e.target.checked && !authManager.user) {
                 e.target.checked = false;
-                alert('Exposed requires a PocketBase account. Please sign in first.');
+                updateExposedDescription();
                 return;
             }
-            exposedSettings.setEnabled(e.target.checked);
-            if (e.target.checked) {
-                alert('Exposed enabled! Your listening stats will now be tracked and synced across devices.');
+            try {
+                await exposedSettings.setEnabled(e.target.checked);
+            } catch (error) {
+                console.error('Failed to update Exposed setting:', error);
+                e.target.checked = exposedSettings.isEnabled();
             }
+            updateExposedDescription();
         });
     }
+    updateExposedDescription();
+    authManager.onAuthStateChanged(() => updateExposedDescription());
 
     const lastfmConnectBtn = document.getElementById('lastfm-connect-btn');
     const lastfmStatus = document.getElementById('lastfm-status');

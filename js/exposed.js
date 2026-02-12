@@ -87,6 +87,15 @@ class ExposedManager {
 
         if (!track || !track.id) return;
 
+        const artistPicture =
+            track.artist?.picture ||
+            track.artist?.image ||
+            track.artists?.[0]?.picture ||
+            track.artists?.[0]?.image ||
+            track.album?.artist?.picture ||
+            track.album?.artist?.image ||
+            null;
+
         const entry = {
             timestamp: Date.now(),
             trackId: track.id,
@@ -94,6 +103,7 @@ class ExposedManager {
             duration: track.duration || 0,
             artistName: track.artist?.name || track.artists?.[0]?.name || '',
             artistId: track.artist?.id || track.artists?.[0]?.id || null,
+            artistPicture,
             albumTitle: track.album?.title || '',
             albumId: track.album?.id || null,
             albumCover: track.album?.cover || null,
@@ -147,8 +157,11 @@ class ExposedManager {
                     artistCounts[aKey] = {
                         id: listen.artistId,
                         name: listen.artistName,
+                        picture: listen.artistPicture || null,
                         count: 0,
                     };
+                } else if (!artistCounts[aKey].picture && listen.artistPicture) {
+                    artistCounts[aKey].picture = listen.artistPicture;
                 }
                 artistCounts[aKey].count++;
             }
@@ -240,8 +253,8 @@ class ExposedManager {
             const mergedListens = await syncManager.syncExposedListens(localListens);
 
             // Find cloud listens that we don't have locally
-            const localKeys = new Set(localListens.map(l => `${l.timestamp}-${l.trackId}`));
-            const newFromCloud = mergedListens.filter(l => !localKeys.has(`${l.timestamp}-${l.trackId}`));
+            const localKeys = new Set(localListens.map((l) => `${l.timestamp}-${l.trackId}`));
+            const newFromCloud = mergedListens.filter((l) => !localKeys.has(`${l.timestamp}-${l.trackId}`));
 
             // Add cloud listens to local IndexedDB
             if (newFromCloud.length > 0) {

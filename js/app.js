@@ -8,6 +8,8 @@ import {
     downloadQualitySettings,
     sidebarSettings,
     pwaUpdateSettings,
+    exposedSettings,
+    sidebarSectionSettings,
 } from './storage.js';
 import { UIRenderer } from './ui.js';
 import { Player } from './player.js';
@@ -400,6 +402,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const currentTheme = themeManager.getTheme();
     themeManager.setTheme(currentTheme);
+
+    await exposedSettings.init();
+    await sidebarSectionSettings.initExposedVisibility();
 
     // Restore sidebar state
     sidebarSettings.restoreState();
