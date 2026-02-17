@@ -1714,6 +1714,10 @@ export const sidebarSectionSettings = {
         db.saveSetting(this.SHOW_EXPOSED_KEY, this._exposedVisible).catch(() => {});
     },
 
+    getShowExposedPreference() {
+        return this._exposedVisible;
+    },
+
     shouldShowUnreleased() {
         try {
             const val = localStorage.getItem(this.SHOW_UNRELEASED_KEY);

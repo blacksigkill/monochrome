@@ -3204,6 +3204,11 @@ export class UIRenderer {
         const yearSelect = document.getElementById('exposed-year-select');
         const syncBtn = document.getElementById('exposed-sync-btn');
 
+        if (!container || !timeline || !yearSelect) {
+            console.error('Exposed page elements are missing from DOM');
+            return;
+        }
+
         // Check if Exposed is enabled
         if (!exposedSettings.isEnabled()) {
             container.innerHTML = `
@@ -3387,25 +3392,29 @@ export class UIRenderer {
             return this.api.getArtistPictureUrl(pictureId, size);
         };
 
-        await Promise.all(
-            stats.topArtists.map(async (artist) => {
-                if (!artist?.id) return;
-                try {
-                    const artistData = await this.api.getArtist(artist.id);
-                    const nextPicture = artistData?.picture || artistData?.image || null;
-                    if (nextPicture) {
-                        artist.picture = nextPicture;
-                    }
-                } catch {
-                    // ignore artist lookup failures
-                }
-            })
-        );
+        const resolveExposedHref = (type, id) => {
+            if (!id) return '#';
+
+            if (typeof id === 'string' && id.startsWith('q:')) {
+                return `/${type}/q/${encodeURIComponent(id.slice(2))}`;
+            }
+
+            if (typeof id === 'string' && id.startsWith('t:')) {
+                return `/${type}/t/${encodeURIComponent(id.slice(2))}`;
+            }
+
+            return `/${type}/${encodeURIComponent(String(id))}`;
+        };
 
         // Format listening time
         const hours = Math.floor(stats.totalDuration / 3600);
         const mins = Math.floor((stats.totalDuration % 3600) / 60);
-        const timeStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+        const formattedDuration = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+        const timeStr = `${stats.durationEstimated ? '~' : ''}${formattedDuration}`;
+
+        const partialHistoryNotice = exposedManager.hasAvailableMonthsPartial()
+            ? `<div class="exposed-notice">History may be partial for very large archives because some scrobbler APIs cap deep pagination.</div>`
+            : '';
 
         // Peak day suffix
         const peakDaySuffix = (d) => {
@@ -3424,6 +3433,7 @@ export class UIRenderer {
 
         // Hero stats
         let html = `
+            ${partialHistoryNotice}
             <h3 class="exposed-month-title">${monthName} ${year}</h3>
             <div class="exposed-hero-grid">
                 <div class="exposed-hero-card">
@@ -3473,7 +3483,10 @@ export class UIRenderer {
                     <div class="exposed-list">
                         ${stats.topTracks
                             .map(
-                                (t, i) => `<div class="exposed-list-item" data-href="${t.id ? `/track/${t.id}` : '#'}">
+                                (
+                                    t,
+                                    i
+                                ) => `<div class="exposed-list-item" data-href="${resolveExposedHref('track', t.id)}">
                                 <span class="exposed-rank">${i + 1}</span>
                                 ${t.albumCover ? `<img class="exposed-cover" src="${resolveExposedCover(t.albumCover, '80')}" alt="" loading="lazy"/>` : '<div class="exposed-cover exposed-cover-placeholder"></div>'}
                                 <div class="exposed-item-info">
@@ -3497,7 +3510,10 @@ export class UIRenderer {
                     <div class="exposed-list">
                         ${stats.topArtists
                             .map(
-                                (a, i) => `<div class="exposed-list-item" data-href="${a.id ? `/artist/${a.id}` : '#'}">
+                                (
+                                    a,
+                                    i
+                                ) => `<div class="exposed-list-item" data-href="${resolveExposedHref('artist', a.id)}">
                                 <span class="exposed-rank">${i + 1}</span>
                                 ${a.picture ? `<img class="exposed-cover" src="${resolveExposedArtistPicture(a.picture, '160')}" alt="" loading="lazy"/>` : '<div class="exposed-cover exposed-cover-placeholder"></div>'}
                                 <div class="exposed-item-info">
@@ -3520,7 +3536,10 @@ export class UIRenderer {
                     <div class="exposed-list">
                         ${stats.topAlbums
                             .map(
-                                (a, i) => `<div class="exposed-list-item" data-href="${a.id ? `/album/${a.id}` : '#'}">
+                                (
+                                    a,
+                                    i
+                                ) => `<div class="exposed-list-item" data-href="${resolveExposedHref('album', a.id)}">
                                 <span class="exposed-rank">${i + 1}</span>
                                 ${a.cover ? `<img class="exposed-cover" src="${resolveExposedCover(a.cover, '80')}" alt="" loading="lazy"/>` : '<div class="exposed-cover exposed-cover-placeholder"></div>'}
                                 <div class="exposed-item-info">

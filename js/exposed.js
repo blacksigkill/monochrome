@@ -6,6 +6,7 @@ const LASTFM_PAGE_SIZE = 200;
 const LISTENBRAINZ_PAGE_SIZE = 100;
 const MALOJA_PAGE_SIZE = 200;
 const MAX_PAGE_REQUESTS = 75;
+const AVAILABLE_MONTHS_MAX_PAGE_REQUESTS = 300;
 const AVAILABLE_MONTHS_CACHE_TTL = 5 * 60 * 1000;
 const MAX_TRACK_ENRICH_LOOKUPS = 30;
 const MAX_ALBUM_ENRICH_LOOKUPS = 20;
@@ -13,6 +14,7 @@ const MAX_ARTIST_ENRICH_LOOKUPS = 10;
 const TRACK_MATCH_MIN_SCORE = 7;
 const ALBUM_MATCH_MIN_SCORE = 6;
 const ARTIST_MATCH_MIN_SCORE = 5;
+const DEFAULT_TRACK_DURATION_SECONDS = 210;
 const ENRICHMENT_CACHE_KEY = 'exposed_enrichment_cache_v1';
 const ENRICHMENT_CACHE_TTL = 30 * 24 * 60 * 60 * 1000;
 const TRACK_LOOKUP_CACHE_MAX = 3500;
@@ -31,6 +33,7 @@ class ExposedManager {
             signature: null,
             expiresAt: 0,
             months: [],
+            partial: false,
         };
         this._listenBrainzIdentity = {
             token: null,
@@ -60,6 +63,7 @@ class ExposedManager {
             signature: null,
             expiresAt: 0,
             months: [],
+            partial: false,
         };
         this._listenBrainzIdentity = {
             token: null,
@@ -81,6 +85,10 @@ class ExposedManager {
         return this._getConnectedSources().map((source) => source.label);
     }
 
+    hasAvailableMonthsPartial() {
+        return !!this._availableMonthsCache.partial;
+    }
+
     async computeMonthlyStats(year, month) {
         const listens = await this._getMonthlyListens(year, month);
 
@@ -92,65 +100,16 @@ class ExposedManager {
         const artistCounts = {};
         const albumCounts = {};
         const dailyActivity = {};
-        let totalDuration = 0;
 
         for (const listen of listens) {
-            const trackKey = this._getTrackKey(listen);
-            if (!trackCounts[trackKey]) {
-                trackCounts[trackKey] = {
-                    id: listen.trackId,
-                    title: listen.title,
-                    artistName: listen.artistName,
-                    artistId: listen.artistId,
-                    albumTitle: listen.albumTitle,
-                    albumId: listen.albumId,
-                    albumCover: listen.albumCover,
-                    count: 0,
-                };
-            }
-            trackCounts[trackKey].count++;
-
-            if (listen.artistName) {
-                const normalizedArtistId = this._normalizeArtistId(listen.artistId);
-                const artistKey = normalizedArtistId || this._sanitizeKey(listen.artistName);
-                if (!artistCounts[artistKey]) {
-                    artistCounts[artistKey] = {
-                        id: normalizedArtistId,
-                        name: listen.artistName,
-                        picture: listen.artistPicture || null,
-                        count: 0,
-                    };
-                } else if (!artistCounts[artistKey].picture && listen.artistPicture) {
-                    artistCounts[artistKey].picture = listen.artistPicture;
-                }
-                artistCounts[artistKey].count++;
-            }
-
-            if (listen.albumTitle) {
-                const albumKey =
-                    listen.albumId ||
-                    `${this._sanitizeKey(listen.albumTitle)}|${this._sanitizeKey(listen.artistName || 'unknown')}`;
-                if (!albumCounts[albumKey]) {
-                    albumCounts[albumKey] = {
-                        id: this._normalizeAlbumId(listen.albumId),
-                        title: listen.albumTitle,
-                        artistName: listen.artistName,
-                        cover: listen.albumCover,
-                        count: 0,
-                    };
-                }
-                albumCounts[albumKey].count++;
-            }
-
-            const day = new Date(listen.timestamp).getDate();
-            dailyActivity[day] = (dailyActivity[day] || 0) + 1;
-
-            totalDuration += listen.duration || 0;
+            this._accumulateTrackStats(trackCounts, listen);
+            this._accumulateArtistStats(artistCounts, listen);
+            this._accumulateAlbumStats(albumCounts, listen);
+            this._accumulateDailyActivity(dailyActivity, listen.timestamp);
         }
 
-        const topTracks = Object.values(trackCounts)
-            .sort((a, b) => b.count - a.count)
-            .slice(0, 10);
+        const rankedTracks = Object.values(trackCounts).sort((a, b) => b.count - a.count);
+        const topTracks = rankedTracks.slice(0, 10);
         const topArtists = Object.values(artistCounts)
             .sort((a, b) => b.count - a.count)
             .slice(0, 10);
@@ -158,11 +117,16 @@ class ExposedManager {
             .sort((a, b) => b.count - a.count)
             .slice(0, 10);
 
+        const trackEnrichmentCandidates = rankedTracks.slice(0, MAX_TRACK_ENRICH_LOOKUPS);
+
         await this._ensureEnrichmentCacheLoaded();
-        await this._enrichTopTracks(topTracks);
-        this._backfillTopAlbumCovers(topAlbums, topTracks);
+        await this._enrichTopTracks(trackEnrichmentCandidates);
+        this._backfillTopAlbumCovers(topAlbums, trackEnrichmentCandidates);
         await this._enrichTopAlbums(topAlbums);
-        await this._enrichTopArtists(topArtists, topTracks);
+        await this._enrichTopArtists(topArtists, trackEnrichmentCandidates);
+
+        const { totalDuration, durationEstimated } = this._estimateTotalDuration(rankedTracks, listens.length);
+        const cleanTopTracks = topTracks.map(({ durationSamples: _durationSamples, ...track }) => track);
 
         const uniqueArtists = Object.keys(artistCounts).length;
 
@@ -184,10 +148,11 @@ class ExposedManager {
         return {
             totalListens: listens.length,
             totalDuration,
+            durationEstimated,
             uniqueArtists,
             peakDay,
             peakDayCount: peakCount,
-            topTracks,
+            topTracks: cleanTopTracks,
             topArtists,
             topAlbums,
             dailyActivity: dailyArray,
@@ -197,6 +162,7 @@ class ExposedManager {
     async getAvailableMonths() {
         const sources = this._getConnectedSources();
         if (sources.length === 0) {
+            this._availableMonthsCache.partial = false;
             return [];
         }
 
@@ -206,8 +172,9 @@ class ExposedManager {
             return this._availableMonthsCache.months;
         }
 
-        const listens = await this._fetchSourcesRange(sources, 0, Math.floor(now / 1000), {
-            maxPages: MAX_PAGE_REQUESTS,
+        const { listens, partial } = await this._fetchSourcesRange(sources, 0, Math.floor(now / 1000), {
+            maxPages: AVAILABLE_MONTHS_MAX_PAGE_REQUESTS,
+            includeMeta: true,
         });
 
         const months = new Set();
@@ -221,6 +188,7 @@ class ExposedManager {
             signature,
             expiresAt: now + AVAILABLE_MONTHS_CACHE_TTL,
             months: sortedMonths,
+            partial,
         };
 
         return sortedMonths;
@@ -259,15 +227,46 @@ class ExposedManager {
         const settled = await Promise.allSettled(sources.map((source) => source.fetchRange(startSec, endSec, options)));
 
         const listens = [];
+        let partial = false;
         settled.forEach((result, index) => {
             if (result.status === 'fulfilled') {
-                listens.push(...result.value);
+                const payload = this._normalizeSourceFetchResult(result.value);
+                listens.push(...payload.listens);
+                partial = partial || payload.partial;
             } else {
                 console.warn(`[Exposed] Failed to fetch ${sources[index].label} listens:`, result.reason);
             }
         });
 
-        return this._dedupeListens(listens);
+        const deduped = this._dedupeListens(listens);
+        if (options.includeMeta) {
+            return {
+                listens: deduped,
+                partial,
+            };
+        }
+        return deduped;
+    }
+
+    _normalizeSourceFetchResult(result) {
+        if (Array.isArray(result)) {
+            return {
+                listens: result,
+                partial: false,
+            };
+        }
+
+        if (result && typeof result === 'object') {
+            return {
+                listens: Array.isArray(result.listens) ? result.listens : [],
+                partial: !!result.partial,
+            };
+        }
+
+        return {
+            listens: [],
+            partial: false,
+        };
     }
 
     _dedupeListens(listens) {
@@ -315,6 +314,154 @@ class ExposedManager {
             albumId: this._normalizeAlbumId(listen.albumId),
             albumCover: this._nullable(listen.albumCover),
         };
+    }
+
+    _accumulateTrackStats(trackCounts, listen) {
+        const trackKey = this._getTrackKey(listen);
+        if (!trackCounts[trackKey]) {
+            trackCounts[trackKey] = {
+                id: listen.trackId,
+                title: listen.title,
+                artistName: listen.artistName,
+                artistId: listen.artistId,
+                artistPicture: listen.artistPicture || null,
+                albumTitle: listen.albumTitle,
+                albumId: listen.albumId,
+                albumCover: listen.albumCover,
+                count: 0,
+                duration: 0,
+                durationSamples: 0,
+            };
+        }
+
+        const entry = trackCounts[trackKey];
+        entry.count++;
+
+        if (!entry.artistId && listen.artistId) {
+            entry.artistId = listen.artistId;
+        }
+        if (!entry.artistPicture && listen.artistPicture) {
+            entry.artistPicture = listen.artistPicture;
+        }
+        if (!entry.albumId && listen.albumId) {
+            entry.albumId = listen.albumId;
+        }
+        if (!entry.albumCover && listen.albumCover) {
+            entry.albumCover = listen.albumCover;
+        }
+
+        const duration = this._safeDuration(listen.duration);
+        if (duration > 0) {
+            const currentSum = entry.duration * entry.durationSamples;
+            const nextSamples = entry.durationSamples + 1;
+            entry.duration = Math.round((currentSum + duration) / nextSamples);
+            entry.durationSamples = nextSamples;
+        }
+    }
+
+    _accumulateArtistStats(artistCounts, listen) {
+        if (!listen.artistName) return;
+
+        const normalizedArtistId = this._normalizeArtistId(listen.artistId);
+        const artistKey = normalizedArtistId || this._sanitizeKey(listen.artistName);
+        if (!artistCounts[artistKey]) {
+            artistCounts[artistKey] = {
+                id: normalizedArtistId,
+                name: listen.artistName,
+                picture: listen.artistPicture || null,
+                count: 0,
+            };
+        }
+
+        const entry = artistCounts[artistKey];
+        entry.count++;
+        if (!entry.picture && listen.artistPicture) {
+            entry.picture = listen.artistPicture;
+        }
+    }
+
+    _accumulateAlbumStats(albumCounts, listen) {
+        if (!listen.albumTitle) return;
+
+        const albumKey =
+            listen.albumId ||
+            `${this._sanitizeKey(listen.albumTitle)}|${this._sanitizeKey(listen.artistName || 'unknown')}`;
+        if (!albumCounts[albumKey]) {
+            albumCounts[albumKey] = {
+                id: this._normalizeAlbumId(listen.albumId),
+                title: listen.albumTitle,
+                artistName: listen.artistName,
+                cover: listen.albumCover,
+                count: 0,
+            };
+        }
+
+        const entry = albumCounts[albumKey];
+        entry.count++;
+        if (!entry.cover && listen.albumCover) {
+            entry.cover = listen.albumCover;
+        }
+    }
+
+    _accumulateDailyActivity(dailyActivity, timestamp) {
+        const day = new Date(timestamp).getDate();
+        dailyActivity[day] = (dailyActivity[day] || 0) + 1;
+    }
+
+    _estimateTotalDuration(rankedTracks, totalListens) {
+        if (!Array.isArray(rankedTracks) || rankedTracks.length === 0 || totalListens <= 0) {
+            return {
+                totalDuration: 0,
+                durationEstimated: false,
+            };
+        }
+
+        let knownDurationTotal = 0;
+        let knownPlays = 0;
+        const knownDurations = [];
+
+        for (const track of rankedTracks) {
+            const duration = this._safeDuration(track.duration);
+            if (duration <= 0) continue;
+
+            knownDurationTotal += duration * track.count;
+            knownPlays += track.count;
+            knownDurations.push(duration);
+        }
+
+        if (knownDurationTotal <= 0) {
+            return {
+                totalDuration: totalListens * DEFAULT_TRACK_DURATION_SECONDS,
+                durationEstimated: true,
+            };
+        }
+
+        if (knownPlays >= totalListens) {
+            return {
+                totalDuration: knownDurationTotal,
+                durationEstimated: false,
+            };
+        }
+
+        const medianDuration = this._computeMedianDuration(knownDurations);
+        const fallbackDuration = Math.min(Math.max(medianDuration || DEFAULT_TRACK_DURATION_SECONDS, 60), 720);
+        const unknownPlays = totalListens - knownPlays;
+
+        return {
+            totalDuration: knownDurationTotal + unknownPlays * fallbackDuration,
+            durationEstimated: true,
+        };
+    }
+
+    _computeMedianDuration(values) {
+        if (!Array.isArray(values) || values.length === 0) return 0;
+
+        const sorted = values.slice().sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        if (sorted.length % 2 === 0) {
+            return Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+        }
+        return sorted[mid];
     }
 
     async _ensureEnrichmentCacheLoaded() {
@@ -519,7 +666,7 @@ class ExposedManager {
         if (!albumEntry || !resolved) return;
 
         if (!albumEntry.id && resolved.albumId) {
-            albumEntry.id = this._normalizeAlbumId(resolved.albumId);
+            albumEntry.id = this._normalizeLookupId(resolved.albumId, 'album');
         }
         if (!albumEntry.cover && resolved.cover) {
             albumEntry.cover = resolved.cover;
@@ -538,7 +685,7 @@ class ExposedManager {
 
                 if (bestMatch) {
                     return {
-                        albumId: bestMatch.id || null,
+                        albumId: this._toProviderScopedId(provider, bestMatch.id, 'album'),
                         cover: bestMatch.cover || null,
                     };
                 }
@@ -630,7 +777,7 @@ class ExposedManager {
         if (!artistEntry || !resolved) return;
 
         if (!artistEntry.id && resolved.artistId) {
-            artistEntry.id = this._normalizeArtistId(resolved.artistId);
+            artistEntry.id = this._normalizeLookupId(resolved.artistId, 'artist');
         }
         if (!artistEntry.picture && resolved.artistPicture) {
             artistEntry.picture = resolved.artistPicture;
@@ -648,7 +795,7 @@ class ExposedManager {
 
                 if (bestMatch) {
                     return {
-                        artistId: bestMatch.id || null,
+                        artistId: this._toProviderScopedId(provider, bestMatch.id, 'artist'),
                         artistPicture: bestMatch.picture || bestMatch.image || null,
                     };
                 }
@@ -749,18 +896,18 @@ class ExposedManager {
     }
 
     _applyResolvedTrackMetadata(trackEntry, resolved) {
-        trackEntry.id = this._normalizeTrackId(resolved.trackId) || trackEntry.id || null;
+        trackEntry.id = this._normalizeLookupId(resolved.trackId, 'track') || trackEntry.id || null;
         if (!trackEntry.albumCover && resolved.albumCover) {
             trackEntry.albumCover = resolved.albumCover;
         }
         if (!trackEntry.albumId && resolved.albumId) {
-            trackEntry.albumId = this._normalizeAlbumId(resolved.albumId);
+            trackEntry.albumId = this._normalizeLookupId(resolved.albumId, 'album');
         }
         if (!trackEntry.albumTitle && resolved.albumTitle) {
             trackEntry.albumTitle = resolved.albumTitle;
         }
         if (!trackEntry.artistId && resolved.artistId) {
-            trackEntry.artistId = this._normalizeArtistId(resolved.artistId);
+            trackEntry.artistId = this._normalizeLookupId(resolved.artistId, 'artist');
         }
         if (!trackEntry.artistPicture && resolved.artistPicture) {
             trackEntry.artistPicture = resolved.artistPicture;
@@ -783,11 +930,11 @@ class ExposedManager {
                 if (bestMatch) {
                     const mainArtist = bestMatch.artist || bestMatch.artists?.[0] || null;
                     return {
-                        trackId: bestMatch.id || null,
+                        trackId: this._toProviderScopedId(provider, bestMatch.id, 'track'),
                         albumCover: bestMatch.album?.cover || null,
-                        albumId: bestMatch.album?.id || null,
+                        albumId: this._toProviderScopedId(provider, bestMatch.album?.id, 'album'),
                         albumTitle: bestMatch.album?.title || null,
-                        artistId: mainArtist?.id || null,
+                        artistId: this._toProviderScopedId(provider, mainArtist?.id, 'artist'),
                         artistPicture: mainArtist?.picture || null,
                         duration: bestMatch.duration || 0,
                     };
@@ -935,6 +1082,62 @@ class ExposedManager {
         return null;
     }
 
+    _toProviderScopedId(provider, value, itemType = 'generic') {
+        const normalized = this._normalizeCatalogId(value, itemType === 'track');
+        if (!normalized) return null;
+
+        if (typeof normalized === 'string') {
+            if (normalized.startsWith('q:') || normalized.startsWith('t:') || normalized.startsWith('tracker-')) {
+                return normalized;
+            }
+        }
+
+        if (provider === 'qobuz') {
+            return `q:${normalized}`;
+        }
+
+        if (provider === 'tidal') {
+            return `t:${normalized}`;
+        }
+
+        if (typeof normalized === 'string' && /^\d+$/.test(normalized)) {
+            return `${this._getDefaultProviderScopePrefix()}${normalized}`;
+        }
+
+        if (typeof normalized === 'number' && Number.isFinite(normalized)) {
+            return `${this._getDefaultProviderScopePrefix()}${normalized}`;
+        }
+
+        return normalized;
+    }
+
+    _normalizeLookupId(value, itemType = 'generic') {
+        const normalized = this._normalizeCatalogId(value, itemType === 'track');
+        if (!normalized) return null;
+
+        if (typeof normalized === 'string') {
+            if (normalized.startsWith('q:') || normalized.startsWith('t:') || normalized.startsWith('tracker-')) {
+                return normalized;
+            }
+            if (/^\d+$/.test(normalized)) {
+                return `${this._getDefaultProviderScopePrefix()}${normalized}`;
+            }
+            return normalized;
+        }
+
+        if (typeof normalized === 'number' && Number.isFinite(normalized)) {
+            return `${this._getDefaultProviderScopePrefix()}${normalized}`;
+        }
+
+        return normalized;
+    }
+
+    _getDefaultProviderScopePrefix() {
+        const provider =
+            this._api && typeof this._api.getCurrentProvider === 'function' ? this._api.getCurrentProvider() : null;
+        return provider === 'qobuz' ? 'q:' : 't:';
+    }
+
     _backfillTopAlbumCovers(topAlbums, topTracks) {
         if (!Array.isArray(topAlbums) || !Array.isArray(topTracks)) return;
 
@@ -1046,134 +1249,110 @@ class ExposedManager {
     }
 
     async _fetchLastFmListens(lastfm, startSec, endSec, options = {}) {
-        const maxPages = options.maxPages || MAX_PAGE_REQUESTS;
-        const listens = [];
-        let page = 1;
-        let totalPages = 1;
-
-        while (page <= totalPages && page <= maxPages) {
-            const data = await lastfm.makeRequest(
-                'user.getRecentTracks',
-                {
-                    user: lastfm.username,
-                    from: startSec,
-                    to: endSec,
-                    limit: LASTFM_PAGE_SIZE,
-                    page,
-                    extended: 1,
-                },
-                false
-            );
-
-            const recentTracks = data?.recenttracks;
-            const tracks = Array.isArray(recentTracks?.track)
-                ? recentTracks.track
-                : recentTracks?.track
-                  ? [recentTracks.track]
-                  : [];
-
-            for (const track of tracks) {
-                if (track?.['@attr']?.nowplaying === 'true') continue;
-                const timestamp = parseInt(track?.date?.uts, 10);
-                if (!timestamp || timestamp < startSec || timestamp > endSec) continue;
-
-                const imageList = Array.isArray(track.image) ? track.image : [];
-                const albumCover =
-                    imageList
-                        .slice()
-                        .reverse()
-                        .find((img) => img?.['#text'])?.['#text'] || null;
-
-                listens.push({
-                    timestamp: timestamp * 1000,
-                    trackId: track.mbid || null,
-                    title: track.name || '',
-                    duration: parseInt(track.duration, 10) || 0,
-                    artistName: track.artist?.name || track.artist?.['#text'] || '',
-                    artistId: track.artist?.mbid || null,
-                    artistPicture: null,
-                    albumTitle: track.album?.['#text'] || track.album?.name || '',
-                    albumId: track.album?.mbid || null,
-                    albumCover,
-                });
-            }
-
-            const totalPagesRaw = recentTracks?.['@attr']?.totalPages || recentTracks?.['@attr']?.totalpages || '1';
-            totalPages = Math.max(1, parseInt(totalPagesRaw, 10) || 1);
-
-            if (tracks.length < LASTFM_PAGE_SIZE) break;
-            page++;
-        }
-
-        return listens;
+        return this._fetchLastFmLikeListens({
+            client: lastfm,
+            username: lastfm.username,
+            startSec,
+            endSec,
+            maxPages: options.maxPages || MAX_PAGE_REQUESTS,
+            requiresAuth: false,
+        });
     }
 
     async _fetchLibreFmListens(librefm, startSec, endSec, options = {}) {
-        const maxPages = options.maxPages || MAX_PAGE_REQUESTS;
+        return this._fetchLastFmLikeListens({
+            client: librefm,
+            username: librefm.username,
+            startSec,
+            endSec,
+            maxPages: options.maxPages || MAX_PAGE_REQUESTS,
+            requiresAuth: true,
+        });
+    }
+
+    async _fetchLastFmLikeListens({ client, username, startSec, endSec, maxPages, requiresAuth }) {
         const listens = [];
         let page = 1;
         let totalPages = 1;
+        let partial = false;
 
         while (page <= totalPages && page <= maxPages) {
-            const data = await librefm.makeRequest(
+            const data = await client.makeRequest(
                 'user.getRecentTracks',
                 {
-                    user: librefm.username,
+                    user: username,
                     from: startSec,
                     to: endSec,
                     limit: LASTFM_PAGE_SIZE,
                     page,
                     extended: 1,
                 },
-                true
+                requiresAuth
             );
 
             const recentTracks = data?.recenttracks;
-            const tracks = Array.isArray(recentTracks?.track)
-                ? recentTracks.track
-                : recentTracks?.track
-                  ? [recentTracks.track]
-                  : [];
+            const tracks = this._normalizeLastFmTrackList(recentTracks?.track);
 
             for (const track of tracks) {
-                if (track?.['@attr']?.nowplaying === 'true') continue;
-                const timestamp = parseInt(track?.date?.uts, 10);
-                if (!timestamp || timestamp < startSec || timestamp > endSec) continue;
-
-                const imageList = Array.isArray(track.image) ? track.image : [];
-                const albumCover =
-                    imageList
-                        .slice()
-                        .reverse()
-                        .find((img) => img?.['#text'])?.['#text'] || null;
-
-                listens.push({
-                    timestamp: timestamp * 1000,
-                    trackId: track.mbid || null,
-                    title: track.name || '',
-                    duration: parseInt(track.duration, 10) || 0,
-                    artistName: track.artist?.name || track.artist?.['#text'] || '',
-                    artistId: track.artist?.mbid || null,
-                    artistPicture: null,
-                    albumTitle: track.album?.['#text'] || track.album?.name || '',
-                    albumId: track.album?.mbid || null,
-                    albumCover,
-                });
+                const normalizedTrack = this._normalizeLastFmRecentTrack(track, startSec, endSec);
+                if (normalizedTrack) {
+                    listens.push(normalizedTrack);
+                }
             }
 
             const totalPagesRaw = recentTracks?.['@attr']?.totalPages || recentTracks?.['@attr']?.totalpages || '1';
             totalPages = Math.max(1, parseInt(totalPagesRaw, 10) || 1);
+            if (page >= maxPages && totalPages > maxPages) {
+                partial = true;
+            }
 
             if (tracks.length < LASTFM_PAGE_SIZE) break;
             page++;
         }
 
-        return listens;
+        return { listens, partial };
+    }
+
+    _normalizeLastFmTrackList(tracks) {
+        if (Array.isArray(tracks)) return tracks;
+        return tracks ? [tracks] : [];
+    }
+
+    _normalizeLastFmRecentTrack(track, startSec, endSec) {
+        if (track?.['@attr']?.nowplaying === 'true') return null;
+
+        const timestamp = parseInt(track?.date?.uts, 10);
+        if (!timestamp || timestamp < startSec || timestamp > endSec) return null;
+
+        const albumCover = this._extractScrobblerImageUrl(track.image);
+
+        return {
+            timestamp: timestamp * 1000,
+            trackId: track.mbid || null,
+            title: track.name || '',
+            duration: parseInt(track.duration, 10) || 0,
+            artistName: track.artist?.name || track.artist?.['#text'] || '',
+            artistId: track.artist?.mbid || null,
+            artistPicture: null,
+            albumTitle: track.album?.['#text'] || track.album?.name || '',
+            albumId: track.album?.mbid || null,
+            albumCover,
+        };
+    }
+
+    _extractScrobblerImageUrl(imageList) {
+        if (!Array.isArray(imageList)) return null;
+        return (
+            imageList
+                .slice()
+                .reverse()
+                .find((img) => img?.['#text'])?.['#text'] || null
+        );
     }
 
     async _fetchListenBrainzListens(listenbrainz, startSec, endSec, options = {}) {
         const username = await this._getListenBrainzUsername(listenbrainz);
-        if (!username) return [];
+        if (!username) return { listens: [], partial: false };
 
         const maxPages = options.maxPages || MAX_PAGE_REQUESTS;
         const apiUrl = listenbrainz.getApiUrl().replace(/\/$/, '');
@@ -1181,6 +1360,7 @@ class ExposedManager {
 
         const listens = [];
         let cursor = endSec;
+        let partial = false;
 
         for (let page = 0; page < maxPages; page++) {
             const params = new URLSearchParams({
@@ -1244,11 +1424,15 @@ class ExposedManager {
             if (oldestTimestamp >= cursor) break;
             if (chunk.length < LISTENBRAINZ_PAGE_SIZE) break;
 
+            if (page === maxPages - 1 && oldestTimestamp > startSec) {
+                partial = true;
+            }
+
             cursor = oldestTimestamp - 1;
             if (cursor < startSec) break;
         }
 
-        return listens;
+        return { listens, partial };
     }
 
     async _getListenBrainzUsername(listenbrainz) {
@@ -1301,7 +1485,7 @@ class ExposedManager {
 
     async _fetchMalojaListens(maloja, startSec, endSec, options = {}) {
         const apiUrl = maloja.getApiUrl().replace(/\/$/, '');
-        if (!apiUrl) return [];
+        if (!apiUrl) return { listens: [], partial: false };
 
         const maxPages = options.maxPages || MAX_PAGE_REQUESTS;
         const token = maloja.getApiKey();
@@ -1318,6 +1502,7 @@ class ExposedManager {
         const listens = [];
         const visitedPages = new Set();
         let nextUrl = `${apiUrl}/apis/mlj_1/scrobbles?${query.toString()}`;
+        let partial = false;
 
         for (let page = 0; page < maxPages && nextUrl; page++) {
             if (visitedPages.has(nextUrl)) break;
@@ -1354,17 +1539,24 @@ class ExposedManager {
 
             const nextPagePath = data?.pagination?.next_page;
             if (nextPagePath) {
+                if (page === maxPages - 1) {
+                    partial = true;
+                }
                 nextUrl = nextPagePath.startsWith('http')
                     ? nextPagePath
                     : `${apiUrl}${nextPagePath.startsWith('/') ? '' : '/'}${nextPagePath}`;
                 continue;
             }
 
+            if (page === maxPages - 1 && chunk.length >= MALOJA_PAGE_SIZE) {
+                partial = true;
+            }
+
             if (chunk.length < MALOJA_PAGE_SIZE) break;
             nextUrl = null;
         }
 
-        return listens;
+        return { listens, partial };
     }
 }
 

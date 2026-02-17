@@ -2373,7 +2373,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
 
     const sidebarShowExposedToggle = document.getElementById('sidebar-show-exposed-toggle');
     if (sidebarShowExposedToggle) {
-        sidebarShowExposedToggle.checked = sidebarSectionSettings.shouldShowExposed();
+        sidebarShowExposedToggle.checked = sidebarSectionSettings.getShowExposedPreference();
 
         // Initialize disabled state if Exposed feature is not enabled
         const exposedItem = sidebarShowExposedToggle.closest('.setting-item');
@@ -2459,6 +2459,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
         // Update the checkbox state in Interface settings if it exists
         const sidebarShowExposedToggle = document.getElementById('sidebar-show-exposed-toggle');
         if (sidebarShowExposedToggle) {
+            sidebarShowExposedToggle.checked = sidebarSectionSettings.getShowExposedPreference();
             const exposedItem = sidebarShowExposedToggle.closest('.setting-item');
             if (exposedItem) {
                 // Disable/enable the toggle based on Exposed feature status
