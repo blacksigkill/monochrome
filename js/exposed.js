@@ -1,14 +1,23 @@
 //js/exposed.js
 
+import { db } from './db.js';
+
 const LASTFM_PAGE_SIZE = 200;
 const LISTENBRAINZ_PAGE_SIZE = 100;
 const MALOJA_PAGE_SIZE = 200;
 const MAX_PAGE_REQUESTS = 75;
 const AVAILABLE_MONTHS_CACHE_TTL = 5 * 60 * 1000;
-const MAX_TRACK_ENRICH_LOOKUPS = 50;
+const MAX_TRACK_ENRICH_LOOKUPS = 30;
+const MAX_ALBUM_ENRICH_LOOKUPS = 20;
 const MAX_ARTIST_ENRICH_LOOKUPS = 10;
 const TRACK_MATCH_MIN_SCORE = 7;
+const ALBUM_MATCH_MIN_SCORE = 6;
 const ARTIST_MATCH_MIN_SCORE = 5;
+const ENRICHMENT_CACHE_KEY = 'exposed_enrichment_cache_v1';
+const ENRICHMENT_CACHE_TTL = 30 * 24 * 60 * 60 * 1000;
+const TRACK_LOOKUP_CACHE_MAX = 3500;
+const ALBUM_LOOKUP_CACHE_MAX = 2500;
+const ARTIST_LOOKUP_CACHE_MAX = 2000;
 
 class ExposedManager {
     constructor() {
@@ -16,6 +25,7 @@ class ExposedManager {
         this._scrobbler = null;
         this._monthCache = new Map();
         this._trackLookupCache = new Map();
+        this._albumLookupCache = new Map();
         this._artistLookupCache = new Map();
         this._availableMonthsCache = {
             signature: null,
@@ -26,6 +36,9 @@ class ExposedManager {
             token: null,
             username: null,
         };
+        this._enrichmentCacheLoaded = false;
+        this._enrichmentCacheLoadPromise = null;
+        this._enrichmentCacheSaveTimer = null;
     }
 
     setScrobbler(scrobbler) {
@@ -41,6 +54,7 @@ class ExposedManager {
     invalidateCache() {
         this._monthCache.clear();
         this._trackLookupCache.clear();
+        this._albumLookupCache.clear();
         this._artistLookupCache.clear();
         this._availableMonthsCache = {
             signature: null,
@@ -51,6 +65,12 @@ class ExposedManager {
             token: null,
             username: null,
         };
+        this._enrichmentCacheLoaded = false;
+        this._enrichmentCacheLoadPromise = null;
+        if (this._enrichmentCacheSaveTimer) {
+            clearTimeout(this._enrichmentCacheSaveTimer);
+            this._enrichmentCacheSaveTimer = null;
+        }
     }
 
     hasConnectedSources() {
@@ -138,8 +158,10 @@ class ExposedManager {
             .sort((a, b) => b.count - a.count)
             .slice(0, 10);
 
+        await this._ensureEnrichmentCacheLoaded();
         await this._enrichTopTracks(topTracks);
         this._backfillTopAlbumCovers(topAlbums, topTracks);
+        await this._enrichTopAlbums(topAlbums);
         await this._enrichTopArtists(topArtists, topTracks);
 
         const uniqueArtists = Object.keys(artistCounts).length;
@@ -295,12 +317,130 @@ class ExposedManager {
         };
     }
 
+    async _ensureEnrichmentCacheLoaded() {
+        if (this._enrichmentCacheLoaded) return;
+
+        if (this._enrichmentCacheLoadPromise) {
+            await this._enrichmentCacheLoadPromise;
+            return;
+        }
+
+        this._enrichmentCacheLoadPromise = this._loadEnrichmentCache();
+        try {
+            await this._enrichmentCacheLoadPromise;
+        } finally {
+            this._enrichmentCacheLoaded = true;
+            this._enrichmentCacheLoadPromise = null;
+        }
+    }
+
+    async _loadEnrichmentCache() {
+        try {
+            const payload = await db.getSetting(ENRICHMENT_CACHE_KEY);
+            if (!payload || typeof payload !== 'object') return;
+
+            const updatedAt = Number(payload.updatedAt || 0);
+            if (!updatedAt || Date.now() - updatedAt > ENRICHMENT_CACHE_TTL) {
+                return;
+            }
+
+            this._restoreLookupMap(this._trackLookupCache, payload.track, TRACK_LOOKUP_CACHE_MAX);
+            this._restoreLookupMap(this._albumLookupCache, payload.album, ALBUM_LOOKUP_CACHE_MAX);
+            this._restoreLookupMap(this._artistLookupCache, payload.artist, ARTIST_LOOKUP_CACHE_MAX);
+        } catch (error) {
+            console.warn('[Exposed] Failed to load enrichment cache:', error);
+        }
+    }
+
+    _queueEnrichmentCacheSave() {
+        if (this._enrichmentCacheSaveTimer) {
+            clearTimeout(this._enrichmentCacheSaveTimer);
+        }
+
+        this._enrichmentCacheSaveTimer = setTimeout(() => {
+            this._enrichmentCacheSaveTimer = null;
+            this._persistEnrichmentCache();
+        }, 1200);
+    }
+
+    async _persistEnrichmentCache() {
+        if (!this._enrichmentCacheLoaded) return;
+
+        const payload = {
+            updatedAt: Date.now(),
+            track: this._serializeLookupMap(this._trackLookupCache, TRACK_LOOKUP_CACHE_MAX),
+            album: this._serializeLookupMap(this._albumLookupCache, ALBUM_LOOKUP_CACHE_MAX),
+            artist: this._serializeLookupMap(this._artistLookupCache, ARTIST_LOOKUP_CACHE_MAX),
+        };
+
+        try {
+            await db.saveSetting(ENRICHMENT_CACHE_KEY, payload);
+        } catch (error) {
+            console.warn('[Exposed] Failed to persist enrichment cache:', error);
+        }
+    }
+
+    _serializeLookupMap(map, maxEntries) {
+        const entries = Array.from(map.entries());
+        if (entries.length <= maxEntries) return entries;
+        return entries.slice(entries.length - maxEntries);
+    }
+
+    _restoreLookupMap(target, entries, maxEntries) {
+        if (!Array.isArray(entries)) return;
+
+        for (const entry of entries) {
+            if (!Array.isArray(entry) || entry.length !== 2) continue;
+            const [key, value] = entry;
+            if (typeof key !== 'string' || !key) continue;
+            target.set(key, value ?? null);
+        }
+
+        this._trimLookupCache(target, maxEntries);
+    }
+
+    _getLookupCacheEntry(map, key) {
+        if (!map.has(key)) return undefined;
+
+        const value = map.get(key);
+        map.delete(key);
+        map.set(key, value);
+        return value;
+    }
+
+    _setLookupCacheEntry(map, key, value, maxEntries) {
+        if (typeof key !== 'string' || !key) return;
+
+        if (map.has(key)) {
+            map.delete(key);
+        }
+        map.set(key, value ?? null);
+        this._trimLookupCache(map, maxEntries);
+        this._queueEnrichmentCacheSave();
+    }
+
+    _trimLookupCache(map, maxEntries) {
+        while (map.size > maxEntries) {
+            const oldestKey = map.keys().next().value;
+            map.delete(oldestKey);
+        }
+    }
+
     async _enrichTopTracks(topTracks) {
         if (!this._api || !Array.isArray(topTracks) || topTracks.length === 0) return;
 
         const targets = topTracks.slice(0, MAX_TRACK_ENRICH_LOOKUPS);
         for (const trackEntry of targets) {
             await this._enrichTrackEntry(trackEntry);
+        }
+    }
+
+    async _enrichTopAlbums(topAlbums) {
+        if (!this._api || !Array.isArray(topAlbums) || topAlbums.length === 0) return;
+
+        const targets = topAlbums.filter((album) => !album?.id || !album?.cover).slice(0, MAX_ALBUM_ENRICH_LOOKUPS);
+        for (const albumEntry of targets) {
+            await this._enrichAlbumEntry(albumEntry);
         }
     }
 
@@ -355,6 +495,114 @@ class ExposedManager {
         }
     }
 
+    async _enrichAlbumEntry(albumEntry) {
+        if (!albumEntry?.title) return;
+        if (albumEntry.id && albumEntry.cover) return;
+
+        const cacheKey = this._createAlbumLookupCacheKey(albumEntry);
+        const cached = this._getLookupCacheEntry(this._albumLookupCache, cacheKey);
+        if (cached !== undefined) {
+            if (cached) {
+                this._applyResolvedAlbumMetadata(albumEntry, cached);
+            }
+            return;
+        }
+
+        const resolved = await this._lookupAlbumMetadata(albumEntry);
+        this._setLookupCacheEntry(this._albumLookupCache, cacheKey, resolved || null, ALBUM_LOOKUP_CACHE_MAX);
+        if (resolved) {
+            this._applyResolvedAlbumMetadata(albumEntry, resolved);
+        }
+    }
+
+    _applyResolvedAlbumMetadata(albumEntry, resolved) {
+        if (!albumEntry || !resolved) return;
+
+        if (!albumEntry.id && resolved.albumId) {
+            albumEntry.id = this._normalizeAlbumId(resolved.albumId);
+        }
+        if (!albumEntry.cover && resolved.cover) {
+            albumEntry.cover = resolved.cover;
+        }
+    }
+
+    async _lookupAlbumMetadata(albumEntry) {
+        const query = `${albumEntry.title} ${albumEntry.artistName || ''}`.trim();
+        const providers = this._trackLookupProviders();
+
+        for (const provider of providers) {
+            try {
+                const response = await this._api.searchAlbums(query, { provider, limit: 10 });
+                const candidates = Array.isArray(response?.items) ? response.items : [];
+                const bestMatch = this._selectBestAlbumCandidate(albumEntry, candidates);
+
+                if (bestMatch) {
+                    return {
+                        albumId: bestMatch.id || null,
+                        cover: bestMatch.cover || null,
+                    };
+                }
+            } catch (error) {
+                console.warn(`[Exposed] Album lookup failed on ${provider}:`, error);
+            }
+        }
+
+        return null;
+    }
+
+    _selectBestAlbumCandidate(albumEntry, candidates) {
+        let bestCandidate = null;
+        let bestScore = -Infinity;
+
+        for (const candidate of candidates) {
+            const score = this._scoreAlbumCandidate(albumEntry, candidate);
+            if (score > bestScore) {
+                bestScore = score;
+                bestCandidate = candidate;
+            }
+        }
+
+        if (bestScore < ALBUM_MATCH_MIN_SCORE) {
+            return null;
+        }
+
+        return bestCandidate;
+    }
+
+    _scoreAlbumCandidate(albumEntry, candidate) {
+        if (!candidate) return -Infinity;
+
+        const expectedTitle = this._normalizeMatchText(albumEntry.title);
+        const expectedArtist = this._normalizeMatchText(albumEntry.artistName || '');
+
+        const candidateTitle = this._normalizeMatchText(candidate.title || '');
+        const candidateArtist = this._normalizeMatchText(candidate.artist?.name || candidate.artists?.[0]?.name || '');
+
+        let score = 0;
+        if (expectedTitle && candidateTitle) {
+            if (expectedTitle === candidateTitle) score += 6;
+            else if (candidateTitle.includes(expectedTitle) || expectedTitle.includes(candidateTitle)) score += 3;
+        }
+
+        if (expectedArtist && candidateArtist) {
+            if (expectedArtist === candidateArtist) score += 4;
+            else if (candidateArtist.includes(expectedArtist) || expectedArtist.includes(candidateArtist)) score += 2;
+        }
+
+        if (candidate.cover) {
+            score += 1;
+        }
+
+        return score;
+    }
+
+    _createAlbumLookupCacheKey(albumEntry) {
+        const providers = this._trackLookupProviders().join(',');
+        const title = this._normalizeMatchText(albumEntry.title || '');
+        const artist = this._normalizeMatchText(albumEntry.artistName || '');
+        return `${providers}|${title}|${artist}`;
+    }
+
     async _enrichArtistEntry(artistEntry) {
         if (!artistEntry?.name) return;
 
@@ -363,8 +611,8 @@ class ExposedManager {
         }
 
         const cacheKey = this._createArtistLookupCacheKey(artistEntry.name);
-        if (this._artistLookupCache.has(cacheKey)) {
-            const cached = this._artistLookupCache.get(cacheKey);
+        const cached = this._getLookupCacheEntry(this._artistLookupCache, cacheKey);
+        if (cached !== undefined) {
             if (cached) {
                 this._applyResolvedArtistMetadata(artistEntry, cached);
             }
@@ -372,7 +620,7 @@ class ExposedManager {
         }
 
         const resolved = await this._lookupArtistMetadata(artistEntry.name);
-        this._artistLookupCache.set(cacheKey, resolved || null);
+        this._setLookupCacheEntry(this._artistLookupCache, cacheKey, resolved || null, ARTIST_LOOKUP_CACHE_MAX);
         if (resolved) {
             this._applyResolvedArtistMetadata(artistEntry, resolved);
         }
@@ -485,8 +733,8 @@ class ExposedManager {
         }
 
         const cacheKey = this._createTrackLookupCacheKey(trackEntry);
-        if (this._trackLookupCache.has(cacheKey)) {
-            const cached = this._trackLookupCache.get(cacheKey);
+        const cached = this._getLookupCacheEntry(this._trackLookupCache, cacheKey);
+        if (cached !== undefined) {
             if (cached) {
                 this._applyResolvedTrackMetadata(trackEntry, cached);
             }
@@ -494,7 +742,7 @@ class ExposedManager {
         }
 
         const resolved = await this._lookupTrackMetadata(trackEntry);
-        this._trackLookupCache.set(cacheKey, resolved || null);
+        this._setLookupCacheEntry(this._trackLookupCache, cacheKey, resolved || null, TRACK_LOOKUP_CACHE_MAX);
         if (resolved) {
             this._applyResolvedTrackMetadata(trackEntry, resolved);
         }
@@ -699,7 +947,7 @@ class ExposedManager {
             if (!albumFromTracks.has(key)) {
                 albumFromTracks.set(key, {
                     cover: track.albumCover || null,
-                    id: track.albumId || null,
+                    id: this._normalizeAlbumId(track.albumId),
                 });
             }
         }
@@ -713,7 +961,7 @@ class ExposedManager {
                 album.cover = resolved.cover;
             }
             if (!album.id && resolved.id) {
-                album.id = resolved.id;
+                album.id = this._normalizeAlbumId(resolved.id);
             }
         }
     }
