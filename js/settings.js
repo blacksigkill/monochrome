@@ -33,6 +33,8 @@ import {
     musicProviderSettings,
     analyticsSettings,
     modalSettings,
+    queueBehaviorSettings,
+    exposedSettings,
 } from './storage.js';
 import { audioContextManager, EQ_PRESETS } from './audio-context.js';
 import { getButterchurnPresets } from './visualizers/butterchurn.js';
@@ -135,6 +137,62 @@ export function initializeSettings(scrobbler, player, api, ui) {
         });
     }
 
+    // Exposed Settings
+    const exposedEnabledToggle = document.getElementById('exposed-enabled-toggle');
+    const exposedDescription = document.getElementById('exposed-description');
+
+    const getConnectedScrobblerLabels = () => {
+        const connectedSources = [];
+        if (scrobbler.lastfm.isAuthenticated()) connectedSources.push('Last.fm');
+        if (scrobbler.listenbrainz.isEnabled()) connectedSources.push('ListenBrainz');
+        if (scrobbler.maloja.isEnabled()) connectedSources.push('Maloja');
+        if (scrobbler.librefm.isAuthenticated()) connectedSources.push('Libre.fm');
+        return connectedSources;
+    };
+
+    const updateExposedDescription = () => {
+        if (!exposedDescription) return;
+
+        const connectedSources = getConnectedScrobblerLabels();
+        const hasConnectedScrobbler = connectedSources.length > 0;
+
+        if (exposedEnabledToggle) {
+            exposedEnabledToggle.disabled = !hasConnectedScrobbler && !exposedSettings.isEnabled();
+        }
+
+        if (exposedSettings.isEnabled()) {
+            exposedDescription.textContent = connectedSources.length
+                ? `Exposed is enabled. Monthly recap is generated from ${connectedSources.join(', ')}.`
+                : 'Exposed is enabled. Connect at least one scrobbler to generate your monthly recap.';
+            return;
+        }
+
+        exposedDescription.textContent = hasConnectedScrobbler
+            ? 'Track your listening habits like Spotify Wrapped using your connected scrobblers.'
+            : 'Connect at least one scrobbler service (Last.fm, ListenBrainz, Maloja, Libre.fm) to enable Exposed.';
+    };
+
+    if (exposedEnabledToggle) {
+        exposedEnabledToggle.checked = exposedSettings.isEnabled();
+        exposedEnabledToggle.addEventListener('change', async (e) => {
+            if (e.target.checked && getConnectedScrobblerLabels().length === 0) {
+                e.target.checked = false;
+                alert('Connect at least one scrobbler service before enabling Exposed.');
+                updateExposedDescription();
+                return;
+            }
+
+            try {
+                await exposedSettings.setEnabled(e.target.checked);
+            } catch (error) {
+                console.error('Failed to update Exposed setting:', error);
+                e.target.checked = exposedSettings.isEnabled();
+            }
+            updateExposedDescription();
+        });
+    }
+    updateExposedDescription();
+
     const lastfmConnectBtn = document.getElementById('lastfm-connect-btn');
     const lastfmStatus = document.getElementById('lastfm-status');
     const lastfmToggle = document.getElementById('lastfm-toggle');
@@ -179,6 +237,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
             // Hide credential auth by default - only show on OAuth failure
             hideCredentialAuth();
         }
+        updateExposedDescription();
     }
 
     function showCredentialAuth() {
@@ -301,6 +360,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
     if (lastfmToggle) {
         lastfmToggle.addEventListener('change', (e) => {
             lastFMStorage.setEnabled(e.target.checked);
+            updateExposedDescription();
         });
     }
 
@@ -472,6 +532,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
         if (lbCustomUrlSetting) lbCustomUrlSetting.style.display = isEnabled ? 'flex' : 'none';
         if (lbTokenInput) lbTokenInput.value = listenBrainzSettings.getToken();
         if (lbCustomUrlInput) lbCustomUrlInput.value = listenBrainzSettings.getCustomUrl();
+        updateExposedDescription();
     };
 
     updateListenBrainzUI();
@@ -487,12 +548,14 @@ export function initializeSettings(scrobbler, player, api, ui) {
     if (lbTokenInput) {
         lbTokenInput.addEventListener('change', (e) => {
             listenBrainzSettings.setToken(e.target.value.trim());
+            updateExposedDescription();
         });
     }
 
     if (lbCustomUrlInput) {
         lbCustomUrlInput.addEventListener('change', (e) => {
             listenBrainzSettings.setCustomUrl(e.target.value.trim());
+            updateExposedDescription();
         });
     }
 
@@ -512,6 +575,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
         if (malojaCustomUrlSetting) malojaCustomUrlSetting.style.display = isEnabled ? 'flex' : 'none';
         if (malojaTokenInput) malojaTokenInput.value = malojaSettings.getToken();
         if (malojaCustomUrlInput) malojaCustomUrlInput.value = malojaSettings.getCustomUrl();
+        updateExposedDescription();
     };
 
     updateMalojaUI();
@@ -527,12 +591,14 @@ export function initializeSettings(scrobbler, player, api, ui) {
     if (malojaTokenInput) {
         malojaTokenInput.addEventListener('change', (e) => {
             malojaSettings.setToken(e.target.value.trim());
+            updateExposedDescription();
         });
     }
 
     if (malojaCustomUrlInput) {
         malojaCustomUrlInput.addEventListener('change', (e) => {
             malojaSettings.setCustomUrl(e.target.value.trim());
+            updateExposedDescription();
         });
     }
 
@@ -562,6 +628,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
             librefmToggleSetting.style.display = 'none';
             librefmLoveSetting.style.display = 'none';
         }
+        updateExposedDescription();
     }
 
     if (librefmConnectBtn) {
@@ -644,6 +711,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
         if (librefmToggle) {
             librefmToggle.addEventListener('change', (e) => {
                 libreFmSettings.setEnabled(e.target.checked);
+                updateExposedDescription();
             });
         }
 
@@ -2303,6 +2371,24 @@ export function initializeSettings(scrobbler, player, api, ui) {
         });
     }
 
+    const sidebarShowExposedToggle = document.getElementById('sidebar-show-exposed-toggle');
+    if (sidebarShowExposedToggle) {
+        sidebarShowExposedToggle.checked = sidebarSectionSettings.shouldShowExposed();
+
+        // Initialize disabled state if Exposed feature is not enabled
+        const exposedItem = sidebarShowExposedToggle.closest('.setting-item');
+        if (!exposedSettings.isEnabled() && exposedItem) {
+            sidebarShowExposedToggle.disabled = true;
+            exposedItem.style.opacity = '0.5';
+            exposedItem.style.pointerEvents = 'none';
+        }
+
+        sidebarShowExposedToggle.addEventListener('change', (e) => {
+            sidebarSectionSettings.setShowExposed(e.target.checked);
+            sidebarSectionSettings.applySidebarVisibility();
+        });
+    }
+
     const sidebarShowUnreleasedToggle = document.getElementById('sidebar-show-unreleased-toggle');
     if (sidebarShowUnreleasedToggle) {
         sidebarShowUnreleasedToggle.checked = sidebarSectionSettings.shouldShowUnreleased();
@@ -2366,6 +2452,27 @@ export function initializeSettings(scrobbler, player, api, ui) {
 
     // Apply sidebar visibility on initialization
     sidebarSectionSettings.applySidebarVisibility();
+
+    // Listen for Exposed toggle changes to update sidebar visibility
+    window.addEventListener('exposed-toggle', () => {
+        sidebarSectionSettings.applySidebarVisibility();
+        // Update the checkbox state in Interface settings if it exists
+        const sidebarShowExposedToggle = document.getElementById('sidebar-show-exposed-toggle');
+        if (sidebarShowExposedToggle) {
+            const exposedItem = sidebarShowExposedToggle.closest('.setting-item');
+            if (exposedItem) {
+                // Disable/enable the toggle based on Exposed feature status
+                sidebarShowExposedToggle.disabled = !exposedSettings.isEnabled();
+                if (!exposedSettings.isEnabled()) {
+                    exposedItem.style.opacity = '0.5';
+                    exposedItem.style.pointerEvents = 'none';
+                } else {
+                    exposedItem.style.opacity = '';
+                    exposedItem.style.pointerEvents = '';
+                }
+            }
+        }
+    });
 
     const sidebarSettingsGroup = sidebarShowHomeToggle?.closest('.settings-group');
     if (sidebarSettingsGroup) {
@@ -3279,3 +3386,4 @@ function escapeHtml(text) {
     div.textContent = text;
     return div.innerHTML;
 }
+

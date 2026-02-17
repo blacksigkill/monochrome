@@ -38,7 +38,6 @@ const syncManager = {
                             history: [],
                             user_playlists: {},
                             user_folders: {},
-                            exposed_listens: [],
                         },
                         { f_id: uid }
                     );
@@ -65,9 +64,8 @@ const syncManager = {
         const history = this.safeParseInternal(record.history, 'history', []);
         const userPlaylists = this.safeParseInternal(record.user_playlists, 'user_playlists', {});
         const userFolders = this.safeParseInternal(record.user_folders, 'user_folders', {});
-        const exposedListens = this.safeParseInternal(record.exposed_listens, 'exposed_listens', []);
 
-        return { library, history, userPlaylists, userFolders, exposedListens };
+        return { library, history, userPlaylists, userFolders };
     },
 
     async _updateUserJSON(uid, field, data) {
@@ -307,54 +305,6 @@ const syncManager = {
         }
 
         await this._updateUserJSON(user.uid, 'user_folders', userFolders);
-    },
-
-    async syncExposedListens(localListens) {
-        const user = authManager.user;
-        if (!user) return;
-
-        const record = await this._getUserRecord(user.uid);
-        if (!record) return;
-
-        let cloudListens = this.safeParseInternal(record.exposed_listens, 'exposed_listens', []);
-
-        // Merge: add local listens that aren't in cloud (based on timestamp + trackId)
-        const cloudKeys = new Set(cloudListens.map(l => `${l.timestamp}-${l.trackId}`));
-        const newListens = localListens.filter(l => !cloudKeys.has(`${l.timestamp}-${l.trackId}`));
-
-        if (newListens.length > 0) {
-            cloudListens = [...cloudListens, ...newListens].sort((a, b) => b.timestamp - a.timestamp);
-            await this._updateUserJSON(user.uid, 'exposed_listens', cloudListens);
-        }
-
-        return cloudListens;
-    },
-
-    async getExposedListens() {
-        const user = authManager.user;
-        if (!user) return [];
-
-        const record = await this._getUserRecord(user.uid);
-        if (!record) return [];
-
-        return this.safeParseInternal(record.exposed_listens, 'exposed_listens', []);
-    },
-
-    async addExposedListen(listen) {
-        const user = authManager.user;
-        if (!user) return;
-
-        const record = await this._getUserRecord(user.uid);
-        if (!record) return;
-
-        let cloudListens = this.safeParseInternal(record.exposed_listens, 'exposed_listens', []);
-
-        // Check if already exists
-        const exists = cloudListens.some(l => l.timestamp === listen.timestamp && l.trackId === listen.trackId);
-        if (!exists) {
-            cloudListens.unshift(listen); // Add at beginning
-            await this._updateUserJSON(user.uid, 'exposed_listens', cloudListens);
-        }
     },
 
     async getPublicPlaylist(uuid) {

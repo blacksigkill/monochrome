@@ -8,10 +8,14 @@ import {
     sidebarSettings,
     pwaUpdateSettings,
     modalSettings,
+    queueBehaviorSettings,
+    exposedSettings,
+    sidebarSectionSettings,
 } from './storage.js';
 import { UIRenderer } from './ui.js';
 import { Player } from './player.js';
 import { MultiScrobbler } from './multi-scrobbler.js';
+import { exposedManager } from './exposed.js';
 import { LyricsManager, openLyricsPanel, clearLyricsPanelSync } from './lyrics.js';
 import { createRouter, updateTabTitle, navigate } from './router.js';
 import { initializePlayerEvents, initializeTrackInteractions, handleTrackAction } from './events.js';
@@ -364,6 +368,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const ui = new UIRenderer(api, player);
     const scrobbler = new MultiScrobbler();
+    exposedManager.setApi(api);
+    exposedManager.setScrobbler(scrobbler);
     const lyricsManager = new LyricsManager(api);
 
     // Check browser support for local files
@@ -385,6 +391,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const currentTheme = themeManager.getTheme();
     themeManager.setTheme(currentTheme);
+
+    await exposedSettings.init();
+    await sidebarSectionSettings.initExposedVisibility();
 
     // Restore sidebar state
     sidebarSettings.restoreState();
@@ -2435,3 +2444,4 @@ function showKeyboardShortcuts() {
     modal.addEventListener('click', handleClose);
     modal.classList.add('active');
 }
+

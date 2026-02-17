@@ -1,7 +1,7 @@
 export class MusicDatabase {
     constructor() {
         this.dbName = 'MonochromeDB';
-        this.version = 8;
+        this.version = 10;
         this.db = null;
     }
 
@@ -63,6 +63,10 @@ export class MusicDatabase {
                 if (!db.objectStoreNames.contains('pinned_items')) {
                     const store = db.createObjectStore('pinned_items', { keyPath: 'id' });
                     store.createIndex('pinnedAt', 'pinnedAt', { unique: false });
+                }
+
+                if (db.objectStoreNames.contains('exposed_listens')) {
+                    db.deleteObjectStore('exposed_listens');
                 }
             };
         });

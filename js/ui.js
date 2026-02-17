@@ -38,7 +38,6 @@ import { syncManager } from './accounts/pocketbase.js';
 import { Visualizer } from './visualizer.js';
 import { navigate } from './router.js';
 import { exposedManager } from './exposed.js';
-import { authManager } from './accounts/auth.js';
 import {
     renderUnreleasedPage as renderUnreleasedTrackerPage,
     renderTrackerArtistPage as renderTrackerArtistContent,
@@ -3211,13 +3210,13 @@ export class UIRenderer {
                 <div style="text-align:center; padding:3rem 2rem;">
                     <h3 style="margin-bottom:1rem; font-size:1.3rem;">Exposed is Disabled</h3>
                     <p style="color:var(--muted-foreground); margin-bottom:1.5rem;">
-                        Exposed requires a PocketBase account to sync your listening data across devices.
+                        Exposed builds your monthly recap from your connected scrobbler services.
                     </p>
                     <p style="color:var(--muted-foreground); margin-bottom:1.5rem;">
-                        ${!authManager.user ? 'Please sign in to your account first, then enable Exposed in Settings.' : 'Enable Exposed in Settings to start tracking your listening stats.'}
+                        Enable Exposed in Settings to start generating your listening recap.
                     </p>
-                    <button class="btn-primary" onclick="window.location.href = '/${!authManager.user ? 'account' : 'settings'}'">
-                        Go to ${!authManager.user ? 'Account' : 'Settings'}
+                    <button class="btn-primary" onclick="window.location.href = '/settings'">
+                        Go to Settings
                     </button>
                 </div>
             `;
@@ -3227,22 +3226,16 @@ export class UIRenderer {
             return;
         }
 
-        if (!authManager.ready) {
-            container.innerHTML =
-                '<div style="text-align:center; padding:2rem; color:var(--muted-foreground)">Checking account...</div>';
-            await authManager.whenReady();
-        }
-
-        // Check authentication
-        if (!authManager.user) {
+        const connectedSources = exposedManager.getConnectedSourceLabels();
+        if (connectedSources.length === 0) {
             container.innerHTML = `
                 <div style="text-align:center; padding:3rem 2rem;">
-                    <h3 style="margin-bottom:1rem; font-size:1.3rem;">Sign In Required</h3>
+                    <h3 style="margin-bottom:1rem; font-size:1.3rem;">No Scrobbler Connected</h3>
                     <p style="color:var(--muted-foreground); margin-bottom:1.5rem;">
-                        Exposed requires authentication to sync your listening data across devices.
+                        Connect at least one scrobbler (Last.fm, ListenBrainz, Maloja, Libre.fm) to build Exposed stats.
                     </p>
-                    <button class="btn-primary" onclick="window.location.href = '/account'">
-                        Sign In
+                    <button class="btn-primary" onclick="window.location.href = '/settings'">
+                        Open Scrobbler Settings
                     </button>
                 </div>
             `;
@@ -3262,7 +3255,7 @@ export class UIRenderer {
 
             if (availableMonths.length === 0) {
                 container.innerHTML = createPlaceholder(
-                    'No listening data yet. Play some tracks to start building your stats!'
+                    `No scrobbles found yet from ${connectedSources.join(', ')}. Play tracks and scrobble them to build your recap.`
                 );
                 timeline.innerHTML = '';
                 yearSelect.style.display = 'none';
@@ -3298,52 +3291,36 @@ export class UIRenderer {
                 }
             };
 
-            yearSelect.addEventListener('change', () => renderYear(yearSelect.value));
+            yearSelect.onchange = () => renderYear(yearSelect.value);
 
-            timeline.addEventListener('click', (e) => {
+            timeline.onclick = (e) => {
                 const chip = e.target.closest('.exposed-month-chip');
                 if (!chip) return;
                 timeline.querySelectorAll('.exposed-month-chip').forEach((c) => c.classList.remove('active'));
                 chip.classList.add('active');
                 this._renderExposedMonth(parseInt(chip.dataset.year), parseInt(chip.dataset.month), container);
-            });
+            };
 
             if (syncBtn) {
                 syncBtn.onclick = async () => {
-                    if (!authManager.user) {
-                        showNotification('Please sign in to sync your data');
-                        return;
-                    }
                     syncBtn.disabled = true;
                     const span = syncBtn.querySelector('span');
-                    const originalText = span.textContent;
-                    span.textContent = 'Syncing...';
+                    const originalText = span?.textContent || 'Refresh';
+                    if (span) span.textContent = 'Refreshing...';
                     try {
-                        const result = await exposedManager.syncAllListens();
-                        span.textContent = 'Synced!';
-                        if (result.addedFromCloud > 0) {
-                            showNotification(`Synced! Added ${result.addedFromCloud} listens from cloud`);
-                            // Refresh current month view
-                            const activeChip = timeline.querySelector('.exposed-month-chip.active');
-                            if (activeChip) {
-                                this._renderExposedMonth(
-                                    parseInt(activeChip.dataset.year),
-                                    parseInt(activeChip.dataset.month),
-                                    container
-                                );
-                            }
-                        } else {
-                            showNotification('All data synced!');
-                        }
+                        exposedManager.invalidateCache();
+                        await this.renderExposedPage();
+                        if (span) span.textContent = 'Refreshed!';
+                        showNotification('Exposed stats refreshed');
                         setTimeout(() => {
-                            span.textContent = originalText;
+                            if (span) span.textContent = originalText;
                         }, 2000);
                     } catch (e) {
-                        console.error('Sync failed:', e);
-                        span.textContent = 'Failed';
-                        showNotification(e.message || 'Sync failed');
+                        console.error('Refresh failed:', e);
+                        if (span) span.textContent = 'Failed';
+                        showNotification(e.message || 'Refresh failed');
                         setTimeout(() => {
-                            span.textContent = originalText;
+                            if (span) span.textContent = originalText;
                         }, 2000);
                     } finally {
                         syncBtn.disabled = false;
