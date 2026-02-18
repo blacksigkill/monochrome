@@ -3406,12 +3406,6 @@ export class UIRenderer {
             return `/${type}/${encodeURIComponent(String(id))}`;
         };
 
-        // Format listening time
-        const hours = Math.floor(stats.totalDuration / 3600);
-        const mins = Math.floor((stats.totalDuration % 3600) / 60);
-        const formattedDuration = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
-        const timeStr = `${stats.durationEstimated ? '~' : ''}${formattedDuration}`;
-
         const partialHistoryNotice = exposedManager.hasAvailableMonthsPartial()
             ? `<div class="exposed-notice">History may be partial for very large archives because some scrobbler APIs cap deep pagination.</div>`
             : '';
@@ -3439,10 +3433,6 @@ export class UIRenderer {
                 <div class="exposed-hero-card">
                     <div class="exposed-hero-value">${stats.totalListens.toLocaleString()}</div>
                     <div class="exposed-hero-label">Listens</div>
-                </div>
-                <div class="exposed-hero-card">
-                    <div class="exposed-hero-value">${timeStr}</div>
-                    <div class="exposed-hero-label">Time Listened</div>
                 </div>
                 <div class="exposed-hero-card">
                     <div class="exposed-hero-value">${stats.uniqueArtists}</div>

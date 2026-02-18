@@ -3,7 +3,7 @@
 import { db } from './db.js';
 
 const LASTFM_PAGE_SIZE = 200;
-const LISTENBRAINZ_PAGE_SIZE = 100;
+const LISTENBRAINZ_PAGE_SIZE = 1000;
 const MALOJA_PAGE_SIZE = 200;
 const MAX_PAGE_REQUESTS = 75;
 const AVAILABLE_MONTHS_MAX_PAGE_REQUESTS = 300;
@@ -14,7 +14,9 @@ const MAX_ARTIST_ENRICH_LOOKUPS = 10;
 const TRACK_MATCH_MIN_SCORE = 7;
 const ALBUM_MATCH_MIN_SCORE = 6;
 const ARTIST_MATCH_MIN_SCORE = 5;
-const DEFAULT_TRACK_DURATION_SECONDS = 210;
+const DEDUPE_TIME_TOLERANCE_SECONDS = 5;
+const DEDUPE_DURATION_TOLERANCE_SECONDS = 20;
+const ENRICHMENT_CONCURRENCY = 3;
 const ENRICHMENT_CACHE_KEY = 'exposed_enrichment_cache_v1';
 const ENRICHMENT_CACHE_TTL = 30 * 24 * 60 * 60 * 1000;
 const TRACK_LOOKUP_CACHE_MAX = 3500;
@@ -125,7 +127,6 @@ class ExposedManager {
         await this._enrichTopAlbums(topAlbums);
         await this._enrichTopArtists(topArtists, trackEnrichmentCandidates);
 
-        const { totalDuration, durationEstimated } = this._estimateTotalDuration(rankedTracks, listens.length);
         const cleanTopTracks = topTracks.map(({ durationSamples: _durationSamples, ...track }) => track);
 
         const uniqueArtists = Object.keys(artistCounts).length;
@@ -147,8 +148,6 @@ class ExposedManager {
 
         return {
             totalListens: listens.length,
-            totalDuration,
-            durationEstimated,
             uniqueArtists,
             peakDay,
             peakDayCount: peakCount,
@@ -172,16 +171,24 @@ class ExposedManager {
             return this._availableMonthsCache.months;
         }
 
-        const { listens, partial } = await this._fetchSourcesRange(sources, 0, Math.floor(now / 1000), {
-            maxPages: AVAILABLE_MONTHS_MAX_PAGE_REQUESTS,
-            includeMeta: true,
-        });
+        const sourceMonths = await Promise.allSettled(
+            sources.map((source) => this._fetchSourceAvailableMonths(source, Math.floor(now / 1000)))
+        );
 
         const months = new Set();
-        for (const listen of listens) {
-            const date = new Date(listen.timestamp);
-            months.add(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`);
-        }
+        let partial = false;
+
+        sourceMonths.forEach((result, index) => {
+            if (result.status !== 'fulfilled') {
+                partial = true;
+                console.warn(`[Exposed] Failed to fetch ${sources[index].label} month availability:`, result.reason);
+                return;
+            }
+
+            const normalized = this._normalizeSourceAvailableMonthsResult(result.value);
+            normalized.months.forEach((month) => months.add(month));
+            partial = partial || normalized.partial;
+        });
 
         const sortedMonths = Array.from(months).sort();
         this._availableMonthsCache = {
@@ -192,6 +199,52 @@ class ExposedManager {
         };
 
         return sortedMonths;
+    }
+
+    async _fetchSourceAvailableMonths(source, nowSec) {
+        if (source && typeof source.getAvailableMonths === 'function') {
+            return source.getAvailableMonths();
+        }
+
+        const { listens, partial } = await this._fetchSourcesRange([source], 0, nowSec, {
+            maxPages: AVAILABLE_MONTHS_MAX_PAGE_REQUESTS,
+            includeMeta: true,
+        });
+
+        return {
+            months: this._extractMonthsFromListens(listens),
+            partial,
+        };
+    }
+
+    _normalizeSourceAvailableMonthsResult(result) {
+        if (Array.isArray(result)) {
+            return {
+                months: result.filter((month) => typeof month === 'string'),
+                partial: false,
+            };
+        }
+
+        if (result && typeof result === 'object') {
+            return {
+                months: Array.isArray(result.months) ? result.months.filter((month) => typeof month === 'string') : [],
+                partial: !!result.partial,
+            };
+        }
+
+        return {
+            months: [],
+            partial: false,
+        };
+    }
+
+    _extractMonthsFromListens(listens) {
+        const months = new Set();
+        for (const listen of listens || []) {
+            const date = new Date(listen.timestamp);
+            months.add(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`);
+        }
+        return Array.from(months).sort();
     }
 
     async _getMonthlyListens(year, month) {
@@ -270,30 +323,171 @@ class ExposedManager {
     }
 
     _dedupeListens(listens) {
-        const deduped = new Map();
-        for (const entry of listens) {
-            const normalized = this._normalizeListen(entry);
-            if (!normalized) continue;
+        const normalizedListens = listens
+            .map((entry) => this._normalizeListen(entry))
+            .filter(Boolean)
+            .sort((a, b) => a.timestamp - b.timestamp);
 
-            const key = `${Math.floor(normalized.timestamp / 1000)}|${this._sanitizeKey(normalized.title)}|${this._sanitizeKey(normalized.artistName)}|${this._sanitizeKey(normalized.albumTitle)}`;
-            const existing = deduped.get(key);
-            if (!existing) {
-                deduped.set(key, normalized);
+        const deduped = [];
+        const strictBuckets = new Map();
+        const looseBuckets = new Map();
+
+        for (const listen of normalizedListens) {
+            const timestampSec = Math.floor(listen.timestamp / 1000);
+            const strictKey = this._buildDedupeKey(listen, true);
+            const looseKey = this._buildDedupeKey(listen, false);
+
+            const strictMatchIndex = this._findDedupeCandidateIndex(
+                strictBuckets.get(strictKey),
+                deduped,
+                listen,
+                timestampSec,
+                false
+            );
+
+            const looseMatchIndex =
+                strictMatchIndex === null
+                    ? this._findDedupeCandidateIndex(looseBuckets.get(looseKey), deduped, listen, timestampSec, true)
+                    : null;
+
+            const matchedIndex = strictMatchIndex !== null ? strictMatchIndex : looseMatchIndex;
+
+            if (matchedIndex === null) {
+                const index = deduped.push(listen) - 1;
+                this._appendDedupeBucket(strictBuckets, strictKey, index, timestampSec);
+                this._appendDedupeBucket(looseBuckets, looseKey, index, timestampSec);
                 continue;
             }
 
-            deduped.set(key, {
-                ...existing,
-                trackId: existing.trackId || normalized.trackId,
-                artistId: existing.artistId || normalized.artistId,
-                artistPicture: existing.artistPicture || normalized.artistPicture,
-                albumId: existing.albumId || normalized.albumId,
-                albumCover: existing.albumCover || normalized.albumCover,
-                duration: existing.duration || normalized.duration,
-            });
+            deduped[matchedIndex] = this._mergeDedupeListenEntries(deduped[matchedIndex], listen);
         }
 
-        return Array.from(deduped.values()).sort((a, b) => a.timestamp - b.timestamp);
+        return deduped;
+    }
+
+    _buildDedupeKey(listen, includeAlbum) {
+        const title = this._normalizeDedupeText(listen.title);
+        const artist = this._normalizeDedupeText(listen.artistName);
+
+        if (!includeAlbum) {
+            return `${title}|${artist}`;
+        }
+
+        const album = this._normalizeDedupeText(listen.albumTitle);
+        return `${title}|${artist}|${album}`;
+    }
+
+    _normalizeDedupeText(value) {
+        const normalized = this._normalizeMatchText(value);
+        if (normalized) {
+            return normalized;
+        }
+        return this._sanitizeKey(value);
+    }
+
+    _findDedupeCandidateIndex(bucket, deduped, incoming, timestampSec, loose) {
+        if (!Array.isArray(bucket) || bucket.length === 0) {
+            return null;
+        }
+
+        this._pruneDedupeBucket(bucket, timestampSec);
+
+        let bestIndex = null;
+        let bestDelta = Infinity;
+
+        for (let i = bucket.length - 1; i >= 0; i--) {
+            const candidateRef = bucket[i];
+            const delta = Math.abs(timestampSec - candidateRef.tsSec);
+
+            if (delta > DEDUPE_TIME_TOLERANCE_SECONDS) {
+                break;
+            }
+
+            const candidate = deduped[candidateRef.index];
+            if (!candidate) continue;
+
+            if (!this._isDedupeCandidateCompatible(candidate, incoming)) continue;
+            if (loose && !this._isLooseDedupeCompatible(candidate, incoming)) continue;
+
+            if (delta < bestDelta) {
+                bestDelta = delta;
+                bestIndex = candidateRef.index;
+                if (delta === 0) break;
+            }
+        }
+
+        return bestIndex;
+    }
+
+    _appendDedupeBucket(bucketMap, key, index, timestampSec) {
+        let bucket = bucketMap.get(key);
+        if (!bucket) {
+            bucket = [];
+            bucketMap.set(key, bucket);
+        }
+
+        bucket.push({
+            index,
+            tsSec: timestampSec,
+        });
+
+        this._pruneDedupeBucket(bucket, timestampSec);
+    }
+
+    _pruneDedupeBucket(bucket, timestampSec) {
+        const minTimestampSec = timestampSec - DEDUPE_TIME_TOLERANCE_SECONDS;
+        while (bucket.length > 0 && bucket[0].tsSec < minTimestampSec) {
+            bucket.shift();
+        }
+    }
+
+    _isDedupeCandidateCompatible(existing, incoming) {
+        const sameTitle = this._normalizeDedupeText(existing.title) === this._normalizeDedupeText(incoming.title);
+        const sameArtist =
+            this._normalizeDedupeText(existing.artistName) === this._normalizeDedupeText(incoming.artistName);
+        return sameTitle && sameArtist && this._isDurationCompatibleForDedupe(existing.duration, incoming.duration);
+    }
+
+    _isLooseDedupeCompatible(existing, incoming) {
+        if (!this._isDurationCompatibleForDedupe(existing.duration, incoming.duration)) {
+            return false;
+        }
+
+        const existingAlbum = this._normalizeDedupeText(existing.albumTitle);
+        const incomingAlbum = this._normalizeDedupeText(incoming.albumTitle);
+
+        if (!existingAlbum || !incomingAlbum) {
+            return true;
+        }
+
+        return existingAlbum === incomingAlbum;
+    }
+
+    _isDurationCompatibleForDedupe(existingDuration, incomingDuration) {
+        const existing = this._safeDuration(existingDuration);
+        const incoming = this._safeDuration(incomingDuration);
+
+        if (!existing || !incoming) {
+            return true;
+        }
+
+        return Math.abs(existing - incoming) <= DEDUPE_DURATION_TOLERANCE_SECONDS;
+    }
+
+    _mergeDedupeListenEntries(existing, incoming) {
+        return {
+            ...existing,
+            timestamp: Math.min(existing.timestamp, incoming.timestamp),
+            trackId: existing.trackId || incoming.trackId,
+            title: existing.title || incoming.title,
+            duration: existing.duration || incoming.duration,
+            artistName: existing.artistName || incoming.artistName,
+            artistId: existing.artistId || incoming.artistId,
+            artistPicture: existing.artistPicture || incoming.artistPicture,
+            albumTitle: existing.albumTitle || incoming.albumTitle,
+            albumId: existing.albumId || incoming.albumId,
+            albumCover: existing.albumCover || incoming.albumCover,
+        };
     }
 
     _normalizeListen(listen) {
@@ -408,62 +602,6 @@ class ExposedManager {
         dailyActivity[day] = (dailyActivity[day] || 0) + 1;
     }
 
-    _estimateTotalDuration(rankedTracks, totalListens) {
-        if (!Array.isArray(rankedTracks) || rankedTracks.length === 0 || totalListens <= 0) {
-            return {
-                totalDuration: 0,
-                durationEstimated: false,
-            };
-        }
-
-        let knownDurationTotal = 0;
-        let knownPlays = 0;
-        const knownDurations = [];
-
-        for (const track of rankedTracks) {
-            const duration = this._safeDuration(track.duration);
-            if (duration <= 0) continue;
-
-            knownDurationTotal += duration * track.count;
-            knownPlays += track.count;
-            knownDurations.push(duration);
-        }
-
-        if (knownDurationTotal <= 0) {
-            return {
-                totalDuration: totalListens * DEFAULT_TRACK_DURATION_SECONDS,
-                durationEstimated: true,
-            };
-        }
-
-        if (knownPlays >= totalListens) {
-            return {
-                totalDuration: knownDurationTotal,
-                durationEstimated: false,
-            };
-        }
-
-        const medianDuration = this._computeMedianDuration(knownDurations);
-        const fallbackDuration = Math.min(Math.max(medianDuration || DEFAULT_TRACK_DURATION_SECONDS, 60), 720);
-        const unknownPlays = totalListens - knownPlays;
-
-        return {
-            totalDuration: knownDurationTotal + unknownPlays * fallbackDuration,
-            durationEstimated: true,
-        };
-    }
-
-    _computeMedianDuration(values) {
-        if (!Array.isArray(values) || values.length === 0) return 0;
-
-        const sorted = values.slice().sort((a, b) => a - b);
-        const mid = Math.floor(sorted.length / 2);
-        if (sorted.length % 2 === 0) {
-            return Math.round((sorted[mid - 1] + sorted[mid]) / 2);
-        }
-        return sorted[mid];
-    }
-
     async _ensureEnrichmentCacheLoaded() {
         if (this._enrichmentCacheLoaded) return;
 
@@ -573,22 +711,40 @@ class ExposedManager {
         }
     }
 
+    async _runWithConcurrency(items, concurrency, worker) {
+        if (!Array.isArray(items) || items.length === 0) return;
+
+        const poolSize = Math.max(1, Math.min(concurrency || 1, items.length));
+        let index = 0;
+
+        const runNext = async () => {
+            while (index < items.length) {
+                const currentIndex = index;
+                index += 1;
+                await worker(items[currentIndex], currentIndex);
+            }
+        };
+
+        const workers = Array.from({ length: poolSize }, () => runNext());
+        await Promise.all(workers);
+    }
+
     async _enrichTopTracks(topTracks) {
         if (!this._api || !Array.isArray(topTracks) || topTracks.length === 0) return;
 
         const targets = topTracks.slice(0, MAX_TRACK_ENRICH_LOOKUPS);
-        for (const trackEntry of targets) {
-            await this._enrichTrackEntry(trackEntry);
-        }
+        await this._runWithConcurrency(targets, ENRICHMENT_CONCURRENCY, (trackEntry) =>
+            this._enrichTrackEntry(trackEntry)
+        );
     }
 
     async _enrichTopAlbums(topAlbums) {
         if (!this._api || !Array.isArray(topAlbums) || topAlbums.length === 0) return;
 
         const targets = topAlbums.filter((album) => !album?.id || !album?.cover).slice(0, MAX_ALBUM_ENRICH_LOOKUPS);
-        for (const albumEntry of targets) {
-            await this._enrichAlbumEntry(albumEntry);
-        }
+        await this._runWithConcurrency(targets, ENRICHMENT_CONCURRENCY, (albumEntry) =>
+            this._enrichAlbumEntry(albumEntry)
+        );
     }
 
     async _enrichTopArtists(topArtists, topTracks) {
@@ -599,9 +755,9 @@ class ExposedManager {
         const targets = topArtists
             .filter((artist) => !artist.id || !artist.picture)
             .slice(0, MAX_ARTIST_ENRICH_LOOKUPS);
-        for (const artistEntry of targets) {
-            await this._enrichArtistEntry(artistEntry);
-        }
+        await this._runWithConcurrency(targets, ENRICHMENT_CONCURRENCY, (artistEntry) =>
+            this._enrichArtistEntry(artistEntry)
+        );
     }
 
     _backfillTopArtistsFromTracks(topArtists, topTracks) {
@@ -1211,6 +1367,12 @@ class ExposedManager {
                 label: 'Last.fm',
                 signature: `${lastfm.username}:${lastfm.API_KEY || 'default'}`,
                 fetchRange: (startSec, endSec, options) => this._fetchLastFmListens(lastfm, startSec, endSec, options),
+                getAvailableMonths: () =>
+                    this._fetchLastFmCompatibleMonths({
+                        client: lastfm,
+                        username: lastfm.username,
+                        requiresAuth: false,
+                    }),
             });
         }
 
@@ -1221,6 +1383,12 @@ class ExposedManager {
                 signature: librefm.username,
                 fetchRange: (startSec, endSec, options) =>
                     this._fetchLibreFmListens(librefm, startSec, endSec, options),
+                getAvailableMonths: () =>
+                    this._fetchLastFmCompatibleMonths({
+                        client: librefm,
+                        username: librefm.username,
+                        requiresAuth: true,
+                    }),
             });
         }
 
@@ -1248,8 +1416,41 @@ class ExposedManager {
         return sources;
     }
 
+    async _fetchLastFmCompatibleMonths({ client, username, requiresAuth }) {
+        const data = await client.makeRequest(
+            'user.getWeeklyChartList',
+            {
+                user: username,
+            },
+            requiresAuth
+        );
+
+        const charts = this._normalizeScrobblerApiList(data?.weeklychartlist?.chart);
+        const months = new Set();
+
+        for (const chart of charts) {
+            const fromSec = parseInt(chart?.from, 10);
+            const toSec = parseInt(chart?.to, 10);
+
+            if (Number.isFinite(fromSec) && fromSec > 0) {
+                const fromDate = new Date(fromSec * 1000);
+                months.add(`${fromDate.getFullYear()}-${String(fromDate.getMonth() + 1).padStart(2, '0')}`);
+            }
+
+            if (Number.isFinite(toSec) && toSec > 0) {
+                const toDate = new Date(toSec * 1000);
+                months.add(`${toDate.getFullYear()}-${String(toDate.getMonth() + 1).padStart(2, '0')}`);
+            }
+        }
+
+        return {
+            months: Array.from(months).sort(),
+            partial: false,
+        };
+    }
+
     async _fetchLastFmListens(lastfm, startSec, endSec, options = {}) {
-        return this._fetchLastFmLikeListens({
+        return this._fetchLastFmCompatibleScrobbles({
             client: lastfm,
             username: lastfm.username,
             startSec,
@@ -1260,7 +1461,7 @@ class ExposedManager {
     }
 
     async _fetchLibreFmListens(librefm, startSec, endSec, options = {}) {
-        return this._fetchLastFmLikeListens({
+        return this._fetchLastFmCompatibleScrobbles({
             client: librefm,
             username: librefm.username,
             startSec,
@@ -1270,7 +1471,7 @@ class ExposedManager {
         });
     }
 
-    async _fetchLastFmLikeListens({ client, username, startSec, endSec, maxPages, requiresAuth }) {
+    async _fetchLastFmCompatibleScrobbles({ client, username, startSec, endSec, maxPages, requiresAuth }) {
         const listens = [];
         let page = 1;
         let totalPages = 1;
@@ -1291,10 +1492,10 @@ class ExposedManager {
             );
 
             const recentTracks = data?.recenttracks;
-            const tracks = this._normalizeLastFmTrackList(recentTracks?.track);
+            const tracks = this._normalizeScrobblerApiList(recentTracks?.track);
 
             for (const track of tracks) {
-                const normalizedTrack = this._normalizeLastFmRecentTrack(track, startSec, endSec);
+                const normalizedTrack = this._normalizeLastFmCompatibleRecentTrack(track, startSec, endSec);
                 if (normalizedTrack) {
                     listens.push(normalizedTrack);
                 }
@@ -1313,12 +1514,12 @@ class ExposedManager {
         return { listens, partial };
     }
 
-    _normalizeLastFmTrackList(tracks) {
+    _normalizeScrobblerApiList(tracks) {
         if (Array.isArray(tracks)) return tracks;
         return tracks ? [tracks] : [];
     }
 
-    _normalizeLastFmRecentTrack(track, startSec, endSec) {
+    _normalizeLastFmCompatibleRecentTrack(track, startSec, endSec) {
         if (track?.['@attr']?.nowplaying === 'true') return null;
 
         const timestamp = parseInt(track?.date?.uts, 10);
@@ -1364,7 +1565,6 @@ class ExposedManager {
 
         for (let page = 0; page < maxPages; page++) {
             const params = new URLSearchParams({
-                min_ts: String(startSec),
                 max_ts: String(cursor),
                 count: String(LISTENBRAINZ_PAGE_SIZE),
             });
@@ -1428,7 +1628,7 @@ class ExposedManager {
                 partial = true;
             }
 
-            cursor = oldestTimestamp - 1;
+            cursor = oldestTimestamp;
             if (cursor < startSec) break;
         }
 
