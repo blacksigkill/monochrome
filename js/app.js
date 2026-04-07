@@ -24,6 +24,7 @@ import { LyricsManager, openLyricsPanel, clearLyricsPanelSync } from './lyrics.j
 import { createRouter, updateTabTitle, navigate } from './router.js';
 import { initializePlayerEvents, initializeTrackInteractions, handleTrackAction } from './events.js';
 import { initializeUIInteractions } from './ui-interactions.js';
+import { ServerConnector } from './server-connector.js';
 import { debounce, getShareUrl } from './utils.js';
 import { sidePanelManager } from './side-panel.js';
 import { db } from './db.js';
@@ -645,6 +646,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     );
     initializeUIInteractions(Player.instance, MusicAPI.instance, UIRenderer.instance);
     initializeKeyboardShortcuts(Player.instance, audioPlayer);
+
+    // Server connector (player sync & remote control)
+    ServerConnector.initialize(Player.instance);
 
     // Restore UI state for the current track (like button, theme)
     if (Player.instance.currentTrack) {

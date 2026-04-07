@@ -34,6 +34,7 @@ import {
     gaplessPlaybackSettings,
     analyticsSettings,
     modalSettings,
+    serverSettings,
     preferDolbyAtmosSettings,
     fullscreenCoverNoRoundSettings,
     fullscreenCoverVanillaTiltSettings,
@@ -46,6 +47,7 @@ import { parseRawData, TARGETS, SPEAKER_TARGETS } from './autoeq-data.js';
 import { fetchAutoEqIndex, fetchHeadphoneData, searchHeadphones, POPULAR_HEADPHONES } from './autoeq-importer.js';
 import { db } from './db.js';
 import { authManager } from './accounts/auth.js';
+import { auth } from './accounts/config.js';
 import { syncManager } from './accounts/pocketbase.js';
 import { containerFormats, customFormats } from './ffmpegFormats.ts';
 import { BulkDownloadMethod, modernSettings } from './ModernSettings.js';
@@ -5573,6 +5575,77 @@ export async function initializeSettings(scrobbler, player, api, ui) {
         analyticsToggle.checked = analyticsSettings.isEnabled();
         analyticsToggle.addEventListener('change', (e) => {
             analyticsSettings.setEnabled(e.target.checked);
+        });
+    }
+
+    // ─── Server Connector Settings ───
+    const serverEnabledToggle = document.getElementById('server-enabled-toggle');
+    const serverUrlInput = document.getElementById('server-url-input');
+    const serverInstanceNameInput = document.getElementById('server-instance-name-input');
+    const serverReconnectBtn = document.getElementById('server-reconnect-btn');
+
+    if (serverEnabledToggle) {
+        serverEnabledToggle.checked = serverSettings.isEnabled();
+        serverEnabledToggle.addEventListener('change', (e) => {
+            serverSettings.setEnabled(e.target.checked);
+            // Dynamically connect/disconnect
+            import('./server-connector.js').then(({ ServerConnector }) => {
+                const sc = ServerConnector.instance;
+                if (sc) {
+                    e.target.checked ? sc.connect() : sc.disconnect();
+                }
+            });
+        });
+    }
+    if (serverUrlInput) {
+        serverUrlInput.value = serverSettings.getUrl();
+        serverUrlInput.addEventListener('input', (e) => {
+            serverSettings.setUrl(e.target.value);
+        });
+    }
+    if (serverInstanceNameInput) {
+        serverInstanceNameInput.value = serverSettings.getInstanceName();
+        serverInstanceNameInput.addEventListener('input', (e) => {
+            serverSettings.setInstanceName(e.target.value);
+        });
+    }
+    if (serverReconnectBtn) {
+        serverReconnectBtn.addEventListener('click', () => {
+            // Flush any pending input changes before reconnecting
+            if (serverUrlInput) serverSettings.setUrl(serverUrlInput.value);
+            if (serverInstanceNameInput) serverSettings.setInstanceName(serverInstanceNameInput.value);
+            import('./server-connector.js').then(({ ServerConnector }) => {
+                const sc = ServerConnector.instance;
+                if (sc) {
+                    sc.disconnect();
+                    sc.connect();
+                }
+            });
+        });
+    }
+    const serverCopyTokenBtn = document.getElementById('server-copy-token-btn');
+    if (serverCopyTokenBtn) {
+        serverCopyTokenBtn.addEventListener('click', async () => {
+            if (!authManager.user) {
+                alert('You must be logged in to generate a token.');
+                return;
+            }
+            const original = serverCopyTokenBtn.textContent;
+            serverCopyTokenBtn.textContent = '...';
+            serverCopyTokenBtn.disabled = true;
+            try {
+                const { jwt } = await auth.createJWT();
+                await navigator.clipboard.writeText(jwt);
+                serverCopyTokenBtn.textContent = 'Copied!';
+            } catch (e) {
+                console.error('Failed to create JWT:', e);
+                serverCopyTokenBtn.textContent = 'Failed';
+                alert('Failed to create token: ' + e.message);
+            }
+            setTimeout(() => {
+                serverCopyTokenBtn.textContent = original;
+                serverCopyTokenBtn.disabled = false;
+            }, 1500);
         });
     }
 

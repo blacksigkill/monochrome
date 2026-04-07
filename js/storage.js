@@ -2823,6 +2823,48 @@ export const modalSettings = {
     },
 };
 
+export const serverSettings = {
+    ENABLED_KEY: 'monochrome-server-enabled',
+    URL_KEY: 'monochrome-server-url',
+    INSTANCE_NAME_KEY: 'monochrome-server-instance-name',
+
+    isEnabled() {
+        try {
+            return localStorage.getItem(this.ENABLED_KEY) === 'true';
+        } catch {
+            return false;
+        }
+    },
+
+    setEnabled(enabled) {
+        localStorage.setItem(this.ENABLED_KEY, enabled ? 'true' : 'false');
+    },
+
+    getUrl() {
+        try {
+            return localStorage.getItem(this.URL_KEY) || '';
+        } catch {
+            return '';
+        }
+    },
+
+    setUrl(url) {
+        localStorage.setItem(this.URL_KEY, url.replace(/\/+$/, ''));
+    },
+
+    getInstanceName() {
+        try {
+            return localStorage.getItem(this.INSTANCE_NAME_KEY) || 'Monochrome Web';
+        } catch {
+            return 'Monochrome Web';
+        }
+    },
+
+    setInstanceName(name) {
+        localStorage.setItem(this.INSTANCE_NAME_KEY, name);
+    },
+};
+
 export const contentBlockingSettings = {
     BLOCKED_ARTISTS_KEY: 'blocked-artists',
     BLOCKED_TRACKS_KEY: 'blocked-tracks',

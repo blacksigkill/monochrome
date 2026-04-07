@@ -2732,6 +2732,7 @@
                         <button class="settings-tab" data-tab="downloads">Downloads</button>
                         <button class="settings-tab" data-tab="instances">Instances</button>
                         <button class="settings-tab" data-tab="system">System</button>
+                        <button class="settings-tab" data-tab="server">Server</button>
                     </div>
                     <div class="settings-tab-content active" id="settings-tab-appearance">
                         <div class="settings-list">
@@ -5283,6 +5284,54 @@
                                     padding: 1rem 0 0.5rem;
                                 "
                             ></p>
+                        </div>
+                    </div>
+
+                    <div class="settings-tab-content" id="settings-tab-server">
+                        <div class="settings-list">
+                            <div class="settings-group">
+                                <div class="setting-item">
+                                    <div class="info">
+                                        <span class="label">Enable Server Sync</span>
+                                        <span class="description">Connect to a monochrome-server for remote control and player sync</span>
+                                    </div>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="server-enabled-toggle" />
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                                <div class="setting-item">
+                                    <div class="info">
+                                        <span class="label">Server URL</span>
+                                        <span class="description">Address of your monochrome-server instance</span>
+                                    </div>
+                                    <input type="text" id="server-url-input" placeholder="http://localhost:3000" style="width: 240px; background: var(--background); border: 1px solid var(--border); color: var(--foreground); padding: 6px 10px; border-radius: 6px; font-size: 0.85rem;" />
+                                </div>
+                                <div class="setting-item">
+                                    <div class="info">
+                                        <span class="label">Instance Name</span>
+                                        <span class="description">How this device appears to other instances</span>
+                                    </div>
+                                    <input type="text" id="server-instance-name-input" placeholder="Monochrome Web" style="width: 180px; background: var(--background); border: 1px solid var(--border); color: var(--foreground); padding: 6px 10px; border-radius: 6px; font-size: 0.85rem;" />
+                                </div>
+                                <div class="setting-item">
+                                    <div class="info">
+                                        <span class="label">Connection Status</span>
+                                        <span class="description" id="server-status-label" style="display:flex;align-items:center;gap:6px">
+                                            <span id="server-status-dot" style="width:8px;height:8px;border-radius:50%;background:#f87171;display:inline-block"></span>
+                                            Disconnected
+                                        </span>
+                                    </div>
+                                    <button class="btn" id="server-reconnect-btn" style="background:var(--primary);color:var(--primary-foreground);border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.85rem">Reconnect</button>
+                                </div>
+                                <div class="setting-item">
+                                    <div class="setting-info">
+                                        <span class="label">Admin Token</span>
+                                        <span class="description">Copy a short-lived JWT to sign into the server admin dashboard</span>
+                                    </div>
+                                    <button class="btn" id="server-copy-token-btn" style="background:var(--background);border:1px solid var(--border);color:var(--foreground);padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.85rem">Copy Token</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
