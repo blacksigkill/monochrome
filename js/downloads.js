@@ -314,7 +314,7 @@ function removeBulkDownloadTask(notifEl) {
     }, 300);
 }
 
-async function downloadTrackBlob(track, quality, api, signal = null, onProgress = null) {
+export async function downloadTrackBlob(track, quality, api, signal = null, onProgress = null) {
     const blob = await api.downloadTrack(track.id, quality, undefined, {
         track,
         signal,
