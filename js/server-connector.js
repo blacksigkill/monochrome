@@ -20,6 +20,7 @@ class ServerConnector {
         this.syncTimer = null;
         this.lastStateJson = null;
         this.connected = false;
+        this.remoteStates = new Map();
         this._tidalEventsSetup = false;
         this._lastTidalTokenSent = null;
     }
@@ -33,7 +34,7 @@ class ServerConnector {
         // Always listen for auth state changes so connect() works whenever called
         authManager.onAuthStateChanged((user) => {
             if (user && serverSettings.isEnabled() && serverSettings.getUrl()) {
-                connector.connect();
+                void connector.connect();
             } else if (!user) {
                 connector.disconnect();
             }
@@ -41,7 +42,7 @@ class ServerConnector {
 
         // Auto-connect if already enabled and user is already logged in
         if (serverSettings.isEnabled() && serverSettings.getUrl() && authManager.user) {
-            connector.connect();
+            void connector.connect();
         }
 
         return connector;
@@ -84,11 +85,11 @@ class ServerConnector {
             const client = HiFiClient.instance;
             if (!client) return;
 
-            client.on(HiFiClientEvents.TokenUpdate, (token) => {
-                this._sendTidalCredentials();
+            client.on(HiFiClientEvents.TokenUpdate, (_token) => {
+                void this._sendTidalCredentials();
             });
             client.on(HiFiClientEvents.RefreshTokenUpdate, () => {
-                this._sendTidalCredentials();
+                void this._sendTidalCredentials();
             });
         }).catch(() => {});
     }
@@ -103,6 +104,35 @@ class ServerConnector {
             console.warn('[server] Failed to create JWT:', e.message);
             return null;
         }
+    }
+
+    async _apiRequest(path, options = {}) {
+        const baseUrl = serverSettings.getUrl();
+        if (!baseUrl) {
+            throw new Error('Monochrome Server is not configured.');
+        }
+
+        const token = await this._getJwt();
+        if (!token) {
+            throw new Error('Unable to authenticate with Monochrome Server.');
+        }
+
+        const response = await fetch(baseUrl.replace(/\/+$/, '') + path, {
+            ...options,
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: token,
+                ...(options.headers || {}),
+            },
+        });
+
+        if (!response.ok) {
+            const message = await response.text().catch(() => '');
+            throw new Error(message || `Server request failed (${response.status})`);
+        }
+
+        if (response.status === 204) return null;
+        return response.json();
     }
 
     // ─── Connection
@@ -159,8 +189,10 @@ class ServerConnector {
             console.log('[server] Disconnected');
             this.connected = false;
             this.instanceId = null;
+            this.remoteStates.clear();
             this.stopSync();
             this.updateStatusUI(false);
+            window.dispatchEvent(new CustomEvent('server:remote-reset'));
             if (serverSettings.isEnabled()) {
                 this.scheduleReconnect();
             }
@@ -176,6 +208,8 @@ class ServerConnector {
         this.reconnectTimer = null;
         this.stopSync();
         this._lastTidalTokenSent = null;
+        this.remoteStates.clear();
+        window.dispatchEvent(new CustomEvent('server:remote-reset'));
         if (this.ws) {
             this.ws.onclose = null; // prevent reconnect
             this.ws.close();
@@ -191,7 +225,7 @@ class ServerConnector {
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;
             if (serverSettings.isEnabled() && authManager.user) {
-                this.connect();
+                void this.connect();
             }
         }, 5000);
     }
@@ -204,9 +238,9 @@ class ServerConnector {
                 this.instanceId = msg.instanceId;
                 console.log('[server] Registered as', msg.instanceId);
                 // Send initial Tidal credentials
-                this._sendTidalCredentials();
+                void this._sendTidalCredentials();
                 // Send initial state
-                this.syncState();
+                void this.syncState();
                 break;
 
             case 'remote:command':
@@ -214,8 +248,14 @@ class ServerConnector {
                 break;
 
             case 'sync:state':
+                this.remoteStates.set(msg.instanceId, { ...msg, receivedAt: Date.now() });
                 // State from another instance — emit event for UI
-                window.dispatchEvent(new CustomEvent('server:remote-state', { detail: msg }));
+                window.dispatchEvent(new CustomEvent('server:remote-state', { detail: { ...msg, receivedAt: Date.now() } }));
+                break;
+
+            case 'sync:offline':
+                this.remoteStates.delete(msg.instanceId);
+                window.dispatchEvent(new CustomEvent('server:remote-offline', { detail: msg }));
                 break;
 
             case 'pong':
@@ -322,6 +362,46 @@ class ServerConnector {
         this.lastStateJson = json;
 
         this.ws.send(JSON.stringify({ type: 'sync:state', state }));
+    }
+
+    async getRemoteTargets() {
+        const targets = await this._apiRequest('/api/remote/targets');
+        return Array.isArray(targets) ? targets : [];
+    }
+
+    getCachedRemoteState(instanceId) {
+        return this.remoteStates.get(instanceId)?.state || null;
+    }
+
+    async fetchRemoteState(instanceId, { force = false } = {}) {
+        if (!force) {
+            const cached = this.getCachedRemoteState(instanceId);
+            if (cached) return cached;
+        }
+
+        const state = await this._apiRequest(`/api/sync/state/${encodeURIComponent(instanceId)}`);
+        if (state) {
+            this.remoteStates.set(instanceId, { instanceId, state, receivedAt: Date.now() });
+        }
+        return state;
+    }
+
+    async sendRemoteCommand(targetInstanceId, command) {
+        if (!targetInstanceId || !command) return;
+
+        try {
+            await this._apiRequest('/api/remote/command', {
+                method: 'POST',
+                body: JSON.stringify({ targetInstanceId, command }),
+            });
+        } catch (error) {
+            if (this.ws && this.ws.readyState === WebSocket.OPEN && this.instanceId) {
+                this.ws.send(JSON.stringify({ type: 'remote:command', targetInstanceId, command }));
+                return;
+            }
+
+            throw error;
+        }
     }
 
     // ─── UI ───

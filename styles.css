@@ -5823,6 +5823,183 @@ input:checked + .slider::before {
     scroll-behavior: smooth;
 }
 
+.remote-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.remote-panel-refresh-btn {
+    padding: 0.55rem 0.9rem;
+    border-radius: 999px;
+    background: var(--secondary);
+    color: var(--foreground);
+    font-weight: 600;
+}
+
+.remote-target-list {
+    display: flex;
+    gap: 0.75rem;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+}
+
+.remote-target-btn {
+    min-width: 180px;
+    padding: 0.85rem 1rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--card) 80%, transparent);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+}
+
+.remote-target-btn.active {
+    border-color: var(--brand);
+    background: color-mix(in srgb, var(--brand) 14%, var(--card));
+}
+
+.remote-target-name {
+    font-weight: 600;
+}
+
+.remote-target-subtitle {
+    font-size: 0.8rem;
+    color: var(--muted-foreground);
+    text-align: left;
+}
+
+.remote-player-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    padding: 1rem;
+    background: color-mix(in srgb, var(--card) 88%, transparent);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.remote-player-header {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr) auto;
+    gap: 0.9rem;
+    align-items: center;
+}
+
+.remote-player-cover {
+    width: 72px;
+    height: 72px;
+    border-radius: var(--radius-lg);
+    object-fit: cover;
+}
+
+.remote-player-meta {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.remote-player-instance {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted-foreground);
+}
+
+.remote-player-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.remote-player-artist {
+    color: var(--muted-foreground);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.remote-player-status {
+    padding: 0.35rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    border: 1px solid var(--border);
+}
+
+.remote-player-status.playing {
+    color: var(--brand);
+    border-color: color-mix(in srgb, var(--brand) 50%, var(--border));
+}
+
+.remote-player-progress,
+.remote-volume-control {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.remote-volume-control {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.remote-volume-control span:first-child {
+    font-weight: 600;
+}
+
+.remote-player-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.remote-player-actions button {
+    padding: 0.7rem 1rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--secondary);
+    font-weight: 600;
+}
+
+.remote-player-actions button.primary,
+.remote-player-actions button.active {
+    background: var(--brand);
+    color: var(--background);
+    border-color: color-mix(in srgb, var(--brand) 70%, var(--border));
+}
+
+.remote-player-actions.secondary button {
+    background: transparent;
+}
+
+.remote-player-footnote,
+.remote-panel-empty {
+    color: var(--muted-foreground);
+    line-height: 1.5;
+}
+
+.remote-panel-empty {
+    min-height: 180px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    gap: 0.45rem;
+}
+
+.remote-panel-empty.compact {
+    min-height: 0;
+    align-items: flex-start;
+    text-align: left;
+}
+
 .btn-icon {
     background: transparent;
     border: none;
@@ -7157,6 +7334,28 @@ img[src=''] {
 
     .desktop-only {
         display: none !important;
+    }
+
+    .remote-player-header {
+        grid-template-columns: 56px minmax(0, 1fr);
+    }
+
+    .remote-player-status {
+        grid-column: 1 / -1;
+        justify-self: start;
+    }
+
+    .remote-player-cover {
+        width: 56px;
+        height: 56px;
+    }
+
+    .remote-player-actions {
+        gap: 0.5rem;
+    }
+
+    .remote-player-actions button {
+        flex: 1 1 0;
     }
 
     .volume-controls button:not(.desktop-only) {
